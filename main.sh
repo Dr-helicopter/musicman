@@ -4,7 +4,26 @@
 
 export MUSICDIR=~/Music
 
+MM_HOME="${XDG_STATE_HOME:-$HOME/.local/state}/muicman"
+tmpfile="${MM_HOME}/tmpfile"
 
+mkdir -p "$MM_HOME"
+
+
+_debug_data() {
+	echo $mmARTIST
+	echo $mmTITLE
+	echo $mmALBUM
+	echo $mmTRACK
+}
+
+
+_mmOpenEditor() {
+	_debug_data
+	bash ~/scripts/MusicMan/editor.sh meta
+	source "$tmpfile"
+	bash ~/scripts/MusicMan/editor.sh re
+}
 
 _has_id3_tags() {
     if id3v2 -l "$1" 2>&1 | grep -q "No ID3 tag"; then
@@ -18,6 +37,7 @@ format_number() {
         printf "%02d" "$1" ||
         echo "xx"
 }
+
 _mmGetTags() {
 	if ! _has_id3_tags $1 ; then
 		echo no id3 tag was found >&2 
@@ -26,11 +46,13 @@ _mmGetTags() {
 
 	local data=$(id3v2 -l $1)
 
+	echo $data
+	export mmARTIST=$(echo $data | grep -oP '^TPE1.*?: \K.*')
+	export mmTITLE=$(echo $data | grep -oP '^TIT2.*?: \K.*')
+	export mmALBUM=$(echo $data | grep -oP '^TALB.*?: \K.*')
+	export mmTRACK=$(echo $data | grep -oP '^TRCK.*?: \K.*')
 
-	mmARTIST=$(echo $data | grep -oP '^TPE1.*?: \K.*')
-	mmTITLE=$(echo $data | grep -oP '^TIT2.*?: \K.*')
-	mmALBUM=$(echo $data | grep -oP '^TALB.*?: \K.*')
-	mmTRACK=$(echo $data | grep -oP '^TRCK.*?: \K.*')
+	_debug_data
 	return 0
 }
 
@@ -40,12 +62,6 @@ _mmSetSongMeta() {
 		return 1
 	}
 
-	echo $1
-	echo $2
-	echo $3
-	echo $4
-	echo $5
-	
 	[[ -n $2 ]] &&
 		id3v2 --TPE1 "$2" "$1"
 
@@ -73,7 +89,6 @@ _mmMergeAlbums() { # artist $1 album $2 to artist $3 album $4
 
 	for i in "$MUSICDIR/$1/$2"/* 
 	do
-		echo $i
 		_mmSetSongMeta "$i" "$3" "$4" "" ""
 		mv "$i" "$MUSICDIR/$3/$4"
 	done
@@ -81,9 +96,12 @@ _mmMergeAlbums() { # artist $1 album $2 to artist $3 album $4
 }
 
 _mmAddSong() {
-	! _mmGetTags "$1" &&
-		return 1
 
+	! _mmGetTags "$1" && {
+		[[ ! -f "$1" ]] && 
+			return 1
+		_mmOpenEditor
+	} || [[ $2 = '-e' ]] && _mmOpenEditor
 
 	mkdir -p "$MUSICDIR/$mmARTIST/$mmALBUM"
 	local file_name="$MUSICDIR/$mmARTIST/$mmALBUM/$(format_number $mmTRACK):$mmTITLE".mp3
@@ -91,19 +109,16 @@ _mmAddSong() {
 
 	id3v2 -D "$file_name"
 	
-	echo $file_name
-
 	_mmSetSongMeta "$file_name" "$mmARTIST" "$mmALBUM" "$mmTRACK" "$mmTITLE"
 }
 
 mmChangeTrackNo() {
 	if ! ( ls "$MUSICDIR/$1/$2" | grep -E "^..:$3.mp3$" &> /tmp/mmfnm ); then
-		echo file "$MUSICDIR/$1/$2/00:$3" doesnt exist
 		return 1
 	fi
 
 	local file_name="$MUSICDIR/$1/$2/$(head -n 1 /tmp/mmfnm)"
-	! _mmGetTags "$file_name" &&
+	! _mmGetTags "$file_name" && 
 		return 1
 
 	mmTRACK="$4"
@@ -117,14 +132,16 @@ mmChangeTrackNo() {
 	_mmSetSongMeta "$new_file_name" "$mmARTIST" "$mmALBUM" "$mmTRACK" "$mmTITLE"
 
 	rm "$file_name"
-
 }
 
 mmAddSong() {
+	args=("$@")
+	for i in `seq $#args`; do [[ "${args[$i]}" = "-e" ]] && unset "args[$i]" && eflag='-e' ; done
+	set -- "${args[@]}"
+
 	for i in $@
 	do
-		echo "$i"
-		_mmAddSong "$i"
+		_mmAddSong "$i" $eflag
 	done
 }
 
