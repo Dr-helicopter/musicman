@@ -145,7 +145,45 @@ mmAddSong() {
 	done
 }
 
-
 mmLsArt() {
 	ls $MUSICDIR | nl
 }
+
+list_select() {
+	for i in `seq "$#"`
+	do
+		echo $i	"$@[$i]"
+	done
+
+	read select_result
+}
+
+
+
+mmPlay() {
+	artists=( "$MUSICDIR"/* )
+	artists=(${artists[@]#$MUSICDIR/})
+
+	list_select "${artists[@]}"
+	
+	[[ $select_result = 'q' ]] && return 0
+
+	if ((select_result < ${#artists})); then
+		artist="${artists[$select_result]}"
+	else 
+		artist="${artists[${#artists}]}"
+	fi
+
+	albums=( "$MUSICDIR/$artist"/* )
+	albums=( "${albums[@]#$MUSICDIR/$artist/}" )
+
+	list_select "${albums[@]}"
+
+	if [[ $select_result < ${#albums} ]]; then
+		~/scripts/MusicMan/player.sh play "$MUSICDIR/$artist/${albums[select_result]}/"
+	else 
+		~/scripts/MusicMan/player.sh play "$MUSICDIR/$artist/${albums[${#albums}]}/"
+	fi
+}
+
+
