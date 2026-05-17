@@ -16,7 +16,9 @@ clear_screan() {
 }
 
 read_stats() {
-	TAB=$(( $(cat $MM_HOME/tab) ))
+	TAB=$(cat "$MM_HOME/tab" 2>/dev/null)
+	TAB=${TAB%%[!0-9]*}	# Remove everything after first non-digit
+	TAB=${TAB:-0}		# Default to 0 if empty
 }
 
 read_artists() {
@@ -94,29 +96,78 @@ ${aritst_tab}${album_tab}${song_tab}\
 "$COLUMNS" "|" "" )
 }
 
-go_tab() {
-	case $1 in 
-		'+')
-			if (($TAB < 2)); then
-				TAB=$((TAB+1))
-				update_tab_bar
-				print_page
-			fi
+cursor_up() {
+	if ((cursor_item > 0)); then
+		((cursor_item--)) 
+		print_line $cursor_item
+		print_line $(($cursor_item+1))
+	fi
+	case $TAB in
+		0)
+			t0cursor_item=$cursor_item
 			;;
-		'-')
-			if (($TAB > 0)); then
-				TAB=$((TAB-1))
-				update_tab_bar
-				print_page
-			fi
+		1)
+			t1cursor_item=$cursor_item
 			;;
-		[0-2])
-			TAB=$1
-			update_tab_bar
-			print_page
+		2)
+			t2cursor_item=$cursor_item
+			;;
+		*)
+			exit 40
 			;;
 	esac
-	echo $TAB > $MM_HOME/tab
+	printf '\e[5H'
+}
+
+cursor_down() {
+	if ((cursor_item < ${#display_list[@]}-1)); then
+		((cursor_item++)) 
+		print_line $cursor_item
+		print_line $(($cursor_item-1))
+	fi
+	case $TAB in
+		0)
+			t0cursor_item=$cursor_item
+			;;
+		1)
+			t1cursor_item=$cursor_item
+			;;
+		2)
+			t2cursor_item=$cursor_item
+			;;
+		*)
+			exit 40
+			;;
+	esac
+	printf '\e[5H'
+}
+
+t0cursor_item=0
+t1cursor_item=0
+t2cursor_item=0
+go_tab() {
+	case $1 in 
+		'+') go_tab $(($TAB+1)) && return 0 ;;
+		'-') go_tab $(($TAB-1)) && return 0 ;;
+		0)
+			((cursor_item=$t0cursor_item))
+			;;
+		1)
+			((cursor_item=$t1cursor_item))
+			;;
+		2)
+			((cursor_item=$t2cursor_item))
+			;;
+		*) return 1 ;;
+	esac
+
+	if (($1 <= 2 && $1 >= 0)); then
+		TAB=$1
+		echo $TAB > $MM_HOME/tab
+	fi
+	update_tab_bar
+	print_page
+
 }
 
 select_item() {
@@ -137,21 +188,8 @@ select_item() {
 	esac
 }
 
-main() {
-	get_terminal_size
-	clear_screan
-	read_artists
-	read_albums
-	read_songs
-	read_stats
-	update_tab_bar
-	print_page
-	for ((;;)); {
-			
-		read -srn 1
-
-
-		case $REPLY in 
+key() {
+	case $1 in 
 			q) exit 0 ;;
 			d) go_tab + ;;
 			a) go_tab - ;;
@@ -159,15 +197,11 @@ main() {
 			al) go_tab 1 ;;
 			sg) go_tab 2 ;;
 			s) 
-				((cursor_item++))
-				print_line $cursor_item
-				print_line $(($cursor_item-1))
+				cursor_down
 				printf '\e[5H'
 				;;
 			w) 
-				((cursor_item--)) 
-				print_line $cursor_item
-				print_line $(($cursor_item+1))
+				cursor_up
 				printf '\e[5H'
 				;;
 			'') 
@@ -191,7 +225,21 @@ main() {
 			*)
 				true
 		esac
-	}
+}
+
+main() {
+	get_terminal_size
+	clear_screan
+	read_artists
+	read_albums
+	read_songs
+	read_stats
+	update_tab_bar
+	print_page
+	for ((;;)); {
+			
+		read -srn 1 && key $REPLY
+		}
 }
 
 
