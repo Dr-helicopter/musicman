@@ -180,9 +180,9 @@ mmPlay() {
 	list_select "${albums[@]}"
 
 	if [[ $select_result < ${#albums} ]]; then
-		~/scripts/MusicMan/player.sh play "$MUSICDIR/$artist/${albums[select_result]}/"
+		~/scripts/MusicMan/player.sh play "$MUSICDIR/$artist/${albums[select_result]}/" &
 	else 
-		~/scripts/MusicMan/player.sh play "$MUSICDIR/$artist/${albums[${#albums}]}/"
+		~/scripts/MusicMan/player.sh play "$MUSICDIR/$artist/${albums[${#albums}]}/" &
 	fi
 }
 
