@@ -6,9 +6,8 @@ MM_HOME="${XDG_STATE_HOME:-$HOME/.local/state}/muicman"
 
 control() {
 echo "$1"  | 
-		socat - ABSTRACT-CONNECT:"$SOCAT_NAME" &> /dev/null && 
-		echo OK ||
-		echo FUCK >&2
+		socat - ABSTRACT-CONNECT:"$SOCAT_NAME" &> /dev/null ||
+		exit 2
 }
 
 
@@ -36,6 +35,8 @@ case $command in
 	play)
 		mpv --no-video --input-ipc-server=@"$SOCAT_NAME" --quiet "$1" ;;
 	pause) control '{ "command": ["cycle", "pause"] }' ;;
+	forward) control '{ "command": ["seek", "+2"] }' ;;
+	backward) control '{ "command": ["seek", "-2"] }' ;;
 	vdown) control '{ "command": ["add", "volume", "-2"] }' ;;
 	vup) control '{ "command": ["add", "volume", "+2"] }' ;;
 esac

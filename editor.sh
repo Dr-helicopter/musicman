@@ -10,6 +10,7 @@ mkdir -p "$MM_HOME"
 
 edit_meta() {
 	cat > "$tmpfile" << EOF
+# file ${1}
 # edit the vars as you please
 
 mmARTIST="$mmARTIST"
@@ -24,7 +25,7 @@ EOF
 
 
 case "$1" in
-	'meta') edit_meta ;;
+	'meta') edit_meta "$2";;
 	're') echo '' > "$tmpfile" ;;
 	*) ehco eeeeeeeeeeeeeee ;;
 esac

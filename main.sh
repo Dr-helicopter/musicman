@@ -20,7 +20,7 @@ _debug_data() {
 
 _mmOpenEditor() {
 	_debug_data
-	bash ~/scripts/MusicMan/editor.sh meta
+	bash ~/scripts/MusicMan/editor.sh meta "$1"
 	source "$tmpfile"
 	bash ~/scripts/MusicMan/editor.sh re
 }
@@ -100,8 +100,8 @@ _mmAddSong() {
 	! _mmGetTags "$1" && {
 		[[ ! -f "$1" ]] && 
 			return 1
-		_mmOpenEditor
-	} || [[ $2 = '-e' ]] && _mmOpenEditor
+		_mmOpenEditor "$1"
+	} || [[ $2 = '-e' ]] && _mmOpenEditor "$1"
 
 	mkdir -p "$MUSICDIR/$mmARTIST/$mmALBUM"
 	local file_name="$MUSICDIR/$mmARTIST/$mmALBUM/$(format_number $mmTRACK):$mmTITLE".mp3

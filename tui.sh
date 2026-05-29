@@ -63,11 +63,11 @@ print_page() {
 			display_update
 			;;
 		1) 
-			display_list=("${albums_list[@]#$MUSICDIR/}")
+			display_list=("${albums_list[@]#$t1prefix/}")
 			display_update
 			;;
 		2) 
-			display_list=("${songs_list[@]#$MUSICDIR/}")
+			display_list=("${songs_list[@]#$t2prefix/}")
 			display_update
 			;;
 
@@ -145,6 +145,10 @@ cursor_down() {
 t0cursor_item=0
 t1cursor_item=0
 t2cursor_item=0
+
+t1prefix=$MUSICDIR
+t2prefix=$MUSICDIR
+
 go_tab() {
 	case $1 in 
 		'+') go_tab $(($TAB+1)) && return 0 ;;
@@ -167,20 +171,24 @@ go_tab() {
 	fi
 	update_tab_bar
 	print_page
-
 }
 
 select_item() {
 	case "$TAB" in
 		0)
-			echo "${artists_list[$1]}"
+			albums_list=( "${artists_list[$1]}"/* )
+			t1cursor_item=0 
+			t1prefix="${artists_list[$1]}"
+			go_tab 1
 			;;
 		1)
 			songs_list=( "${albums_list[$1]}"/* )
+			t2cursor_item=0
+			t2prefix="${albums_list[$1]}"
 			go_tab 2
 			;;
 		2)
-			~/scripts/MusicMan/player.sh play "${songs_list[$1]}"
+			~/scripts/MusicMan/player.sh play "${songs_list[$1]}" &> /dev/null &
 			;;
 		*)
 			command ...
@@ -189,7 +197,18 @@ select_item() {
 }
 
 key() {
-	case $1 in 
+    # Handle special key presses.
+    [[ $1 == $'\e' ]] && {
+        read "${read_flags[@]}" -rsn 1
+
+        # Handle a normal escape key press.
+        [[ ${1}${REPLY} == $'\e\e['* ]] &&
+            read "${read_flags[@]}" -rsn 1 _
+
+        local special_key=${1}${REPLY}
+    }
+
+    case ${special_key:-$1} in
 			q) exit 0 ;;
 			d) go_tab + ;;
 			a) go_tab - ;;
@@ -204,30 +223,46 @@ key() {
 				cursor_up
 				printf '\e[5H'
 				;;
-			'') 
+			e) 
 				select_item $cursor_item
 				unset selection
 				;;
-			e)
+			'')
 				selection="${selection%?}"
 				printf '\e[5H %s ' $selection
 				;;
 			A)
-				~/scripts/MusicMan/player.sh  queue "${songs_list[@]}"
+				~/scripts/MusicMan/player.sh  queue "${songs_list[@]}" &
 				;;
+			
+			# playback Handle  VVV
+			#
+			$'\e2'|$'\e ') ~/scripts/MusicMan/player.sh pause ;;
+			$'\e1'|$'\es') ~/scripts/MusicMan/player.sh vdown ;;
+			$'\e3'|$'\ew') ~/scripts/MusicMan/player.sh vup ;;
+			$'\ed') ~/scripts/MusicMan/player.sh forward ;;
+			$'\ea') ~/scripts/MusicMan/player.sh backward ;;
+
+			$'\ex') killall mpv ;;
+
 			[0-9]*)
 				selection=$selection$REPLY
 				printf '\e[5H %s ' $selection
 				;;
 			[a-z])
 				printf '\e[5H  %s ' $REPLY
-				;;
+			;;
 			*)
 				true
 		esac
 }
 
 main() {
+
+    ((BASH_VERSINFO[0] > 3)) &&
+        read_flags=(-t 0.05)
+
+
 	get_terminal_size
 	clear_screan
 	read_artists
@@ -237,9 +272,9 @@ main() {
 	update_tab_bar
 	print_page
 	for ((;;)); {
-			
-		read -srn 1 && key $REPLY
-		}
+        read "${read_flags[@]}" -srn 1 && key "$REPLY"
+        [[ -t 1 ]] || exit 1
+	}
 }
 
 
