@@ -11,10 +11,10 @@ mkdir -p "$MM_HOME"
 
 
 _debug_data() {
-	echo $mmARTIST
-	echo $mmTITLE
-	echo $mmALBUM
-	echo $mmTRACK
+	echo "$mmARTIST"
+	echo "$mmTITLE"
+	echo "$mmALBUM"
+	echo "$mmTRACK"
 }
 
 
@@ -25,7 +25,7 @@ _mmOpenEditor() {
 	bash ~/scripts/MusicMan/editor.sh re
 }
 
-_has_id3_tags() {
+_has_id3v2_tags() {
     if id3v2 -l "$1" 2>&1 | grep -q "No ID3 tag"; then
         return 1  # no tags
 	fi
@@ -38,21 +38,35 @@ format_number() {
         echo "xx"
 }
 
-_mmGetTags() {
-	if ! _has_id3_tags $1 ; then
-		echo no id3 tag was found >&2 
-		return 1
+__mmGetTags_idv1_falback() {
+	data=$(ffprobe -v quiet -show_entries format_tags=artist,title,album,track \
+		-of default=noprint_wrappers=1:nokey=0 "$1")
+	if [[ -z $data ]] then 
+		return 2
 	fi
 
-	local data=$(id3v2 -l $1)
-
 	echo $data
-	export mmARTIST=$(echo $data | grep -oP '^TPE1.*?: \K.*')
-	export mmTITLE=$(echo $data | grep -oP '^TIT2.*?: \K.*')
-	export mmALBUM=$(echo $data | grep -oP '^TALB.*?: \K.*')
-	export mmTRACK=$(echo $data | grep -oP '^TRCK.*?: \K.*')
+	export mmARTIST=$(echo $data | grep -oP '^TAG:artist=\K.*')
+	export mmTITLE=$(echo $data | grep -oP '^TAG:title=\K.*')
+	export mmALBUM=$(echo $data | grep -oP '^TAG:album=\K.*')
+	export mmTRACK=$(echo $data | grep -oP 'TAG:track=\K.*')
+} 
 
-	_debug_data
+_mmGetTags() {
+	if ! _has_id3v2_tags "$1" ; then
+		__mmGetTags_idv1_falback "$1" || 
+			echo $? no id3 tag was found >&2 
+		return
+	fi
+
+	local data=$(id3v2 -l "$1")
+
+	export mmARTIST=$(echo "$data" | grep -oP '^TPE1.*?: \K.*')
+	export mmTITLE=$(echo "$data" | grep -oP '^TIT2.*?: \K.*')
+	export mmALBUM=$(echo "$data" | grep -oP '^TALB.*?: \K.*')
+	export mmTRACK=$(echo "$data" | grep -oP '^TRCK.*?: \K.*')
+
+
 	return 0
 }
 
@@ -96,7 +110,6 @@ _mmMergeAlbums() { # artist $1 album $2 to artist $3 album $4
 }
 
 _mmAddSong() {
-
 	! _mmGetTags "$1" && {
 		[[ ! -f "$1" ]] && 
 			return 1
@@ -127,7 +140,7 @@ mmChangeTrackNo() {
 	local new_file_name="$MUSICDIR/$mmARTIST/$mmALBUM/$(format_number $mmTRACK):$mmTITLE".mp3
 	cp "$file_name" "$new_file_name"
 
-	id3v2 -D "$new_file_name"
+	id3v2 -D "$new_file_name" &> /dev/null
 
 	_mmSetSongMeta "$new_file_name" "$mmARTIST" "$mmALBUM" "$mmTRACK" "$mmTITLE"
 

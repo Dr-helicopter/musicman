@@ -33,7 +33,6 @@ read_songs() {
 	songs_list=("$MUSICDIR"/*/*/*)
 }
 
-cursor_item=0
 print_line() {
 	if [[ $1 == $cursor_item ]] ; then
 		color_code="\e[${bar_fg3:=32};${bar_bg3:=101}m"
@@ -45,7 +44,6 @@ print_line() {
 }
 
 display_update() {
-	printf '\e[5H %s' $selection
 	printf '\e[6H'
 	for i in $(seq 0 $(($max_items < "${#display_list[@]}"-1 ? $max_items : "${#display_list[@]}"-1)) )
 	do
@@ -68,6 +66,7 @@ print_page() {
 			;;
 		2) 
 			display_list=("${songs_list[@]#$t2prefix/}")
+			display_list=("${display_list[@]%.mp3}")
 			display_update
 			;;
 
@@ -76,7 +75,10 @@ print_page() {
 }
 
 
-update_tab_bar(){
+
+# this will only update the tab bar value
+# in order to display the bar we echo the TAB_BAR variable (has to be quted)
+update_tab_bar(){ 
 	local code0="\e[${bar_fg0:=37};${bar_bg0:=104}m"
 	local code1="\e[${bar_fg1:=37};${bar_bg1:=105}m"
 	local aritst_tab=" ${code0} artist"
@@ -142,15 +144,8 @@ cursor_down() {
 	printf '\e[5H'
 }
 
-t0cursor_item=0
-t1cursor_item=0
-t2cursor_item=0
-
-t1prefix=$MUSICDIR
-t2prefix=$MUSICDIR
-
 go_tab() {
-	case $1 in 
+	case "$1" in 
 		'+') go_tab $(($TAB+1)) && return 0 ;;
 		'-') go_tab $(($TAB-1)) && return 0 ;;
 		0)
@@ -162,13 +157,15 @@ go_tab() {
 		2)
 			((cursor_item=$t2cursor_item))
 			;;
-		*) return 1 ;;
+		*) ;;
 	esac
 
-	if (($1 <= 2 && $1 >= 0)); then
-		TAB=$1
-		echo $TAB > $MM_HOME/tab
+	if (( 0 > "$1" || "$1" > 2 )); then
+		return 0
 	fi
+
+	TAB=$1
+	echo $TAB > $MM_HOME/tab
 	update_tab_bar
 	print_page
 }
@@ -193,6 +190,77 @@ select_item() {
 		*)
 			command ...
 			;;
+	esac
+}
+
+
+in_cmd=0
+open_cmd(){
+	if [[ $1 == '-n' ]]; then
+		local mode=num
+		shift
+	fi
+	for ((;;)); {
+		printf '\e[5H%s%s ' "$1" "$cmd_line"
+
+        read "${read_flags[@]}" -srn 1 && 
+		{
+			char=$REPLY
+			[[ "$REPLY" == $'\e' ]] && {
+				read "${read_flags[@]}" -rsn 1
+
+				# Handle a normal escape key press.
+				[[ $'\e'${REPLY} == $'\e\e['* ]] &&
+					read "${read_flags[@]}" -rsn 1 _
+
+				char=$'\e'${REPLY}
+			}
+
+			case ${char:=$REPLY} in
+				$'\177')
+					local cmd_line=${cmd_line%?}
+					;;
+				'')
+					last_cmd_reply="$cmd_line"
+					printf '\e[1J'
+					echo "$TAB_BAR"
+					return 0
+					;;
+				*)
+					if [[ $mode = 'num' && $char =~ ^[0-9]$ ]]; then
+						local cmd_line=$cmd_line$char
+					elif [[ $char =~ ^([0-9]|[a-z]|[A-Z]|' ')$ ]]; then
+						local cmd_line=$cmd_line$char
+					fi
+					;;
+			esac
+			# very chaotic indeed
+		}
+        [[ -t 1 ]] || exit 1
+	}
+}
+
+run_command() {
+	case "$1" in
+		q) 
+			exit 0 
+			;;
+		"chg tn")
+			if [[ $TAB != 2 ]] then
+				printf '\e[5H%s ' "no song is elected"
+				read -sn 1 nul
+			else 
+				_mmGetTags "${songs_list[$cursor_item]}"
+				open_cmd -n 'give number '
+				if [[ "$last_cmd_reply" =~ ^[0-9]+$ ]]; then
+					mmChangeTrackNo "$mmARTIST" "$mmALBUM" "$mmTITLE" "$last_cmd_reply"
+				else
+					printf '\e[5H%s ' "not a number"
+					read -sn 1 nul
+				fi
+			fi
+			;;
+		*) true ;;
 	esac
 }
 
@@ -223,7 +291,7 @@ key() {
 				cursor_up
 				printf '\e[5H'
 				;;
-			e) 
+			e|' ') 
 				select_item $cursor_item
 				unset selection
 				;;
@@ -235,6 +303,10 @@ key() {
 				~/scripts/MusicMan/player.sh  queue "${songs_list[@]}" &
 				;;
 			
+			c)
+				open_cmd
+				run_command "$last_cmd_reply"
+				;;
 			# playback Handle  VVV
 			#
 			$'\e2'|$'\e ') ~/scripts/MusicMan/player.sh pause ;;
@@ -245,20 +317,12 @@ key() {
 
 			$'\ex') killall mpv ;;
 
-			[0-9]*)
-				selection=$selection$REPLY
-				printf '\e[5H %s ' $selection
-				;;
-			[a-z])
-				printf '\e[5H  %s ' $REPLY
-			;;
 			*)
 				true
 		esac
 }
 
 main() {
-
     ((BASH_VERSINFO[0] > 3)) &&
         read_flags=(-t 0.05)
 
@@ -277,5 +341,12 @@ main() {
 	}
 }
 
+cursor_item=0
+t0cursor_item=0
+t1cursor_item=0
+t2cursor_item=0
+
+t1prefix=$MUSICDIR
+t2prefix=$MUSICDIR
 
 main "$@"
