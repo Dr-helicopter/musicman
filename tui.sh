@@ -259,10 +259,15 @@ run_command() {
 			exit 0 
 			;;
 		"chg tn")
-			if [[ $TAB != 2 ]] then
-				printf '\e[5H%s ' "no song is elected"
-				read -sn 1 nul
-			else 
+			if [[ $TAB == 1 ]] then
+				
+				local alb_path="${albums_list[$cursor_item]}"
+				local alb=${alb_path##*/}
+				local art_path=${alb_path%/*}
+				local art=${art_path##*/}
+
+				~/scripts/MusicMan/editor.sh reord "$art" "$alb"
+			elif [[ $TAB == 2 ]]; then
 				_mmGetTags "${songs_list[$cursor_item]}"
 				open_cmd -n 'give number '
 				if [[ "$last_cmd_reply" =~ ^[0-9]+$ ]]; then
@@ -271,6 +276,9 @@ run_command() {
 					printf '\e[5H%s ' "not a number"
 					read -sn 1 nul
 				fi
+			else
+				printf '\e[5H%s ' "no song or album is elected"
+				read -sn 1 nul
 			fi
 			;;
 		*) true ;;
