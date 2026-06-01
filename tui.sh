@@ -5,9 +5,22 @@ source ~/scripts/MusicMan/main.sh
 
 bar_position=4
 
+get_vars() {
+	LINES=$1 
+	COLUMNS=$(($2-1))
+}
 get_terminal_size() {
-    read -r LINES COLUMNS < <(stty size)
+#    read -r LINES COLUMNS < <(stty size)
+	get_vars $(stty size)
 	((max_items=LINES - 7))
+}
+
+resized() {
+	get_terminal_size
+	get_vars $(stty size)
+	clear_screan
+	update_tab_bar
+	print_page
 }
 
 
@@ -40,7 +53,7 @@ print_line() {
 		unset color_code
 	fi
 
-	printf "\e[$(($1+6))H${color_code}%s > %s\n\e[m" $1 "${display_list[$1]}"
+	printf "\e[$(($1+6))H${color_code}%3d    %s\n\e[m" $1 "${display_list[$1]}"
 }
 
 display_update() {
@@ -300,7 +313,7 @@ key() {
 				printf '\e[5H %s ' $selection
 				;;
 			A)
-				~/scripts/MusicMan/player.sh  queue "${songs_list[@]}" &
+				~/scripts/MusicMan/player.sh  queue "${songs_list[@]}" &> /dev/null &
 				;;
 			
 			c)
@@ -324,7 +337,7 @@ key() {
 
 main() {
     ((BASH_VERSINFO[0] > 3)) &&
-        read_flags=(-t 0.05)
+        read_flags=(-t 1.5)
 
 
 	get_terminal_size
@@ -335,10 +348,13 @@ main() {
 	read_stats
 	update_tab_bar
 	print_page
-	for ((;;)); {
-        read "${read_flags[@]}" -srn 1 && key "$REPLY"
+
+	trap 'resized' WINCH
+
+	while :; do
+		read "${read_flags[@]}" -rsn1 && key "$REPLY"
         [[ -t 1 ]] || exit 1
-	}
+	done
 }
 
 cursor_item=0

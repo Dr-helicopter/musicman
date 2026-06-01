@@ -15,6 +15,30 @@ command=$1
 shift
 
 
+volume=50
+if [[ -f $MM_HOME/volume ]]; then
+	volume=$(cat $MM_HOME/volume)
+fi
+
+volup() {
+	if  (($volume >= 200)); then
+		return
+	fi
+
+	((volume+=2))
+	control '{ "command": ["set", "volume", "'${volume}'"] }' 
+	echo $volume > $MM_HOME/volume
+}
+
+voldown() {
+	if  (($volume <= 0)); then
+		return
+	fi
+	((volume+=-2))
+	control '{ "command": ["set", "volume", "'${volume}'"] }' 
+	echo $volume > $MM_HOME/volume
+}
+
 case $command in
 	cf) 
 		if [[ -S "$SOCAT_NAME" ]]; then
@@ -30,13 +54,16 @@ case $command in
 			echo "${!i}"
 			ln -s "${!i}" "$MM_HOME/queue/$(printf '%08d.mp4' "$i")"
 		done
-		mpv --no-video --input-ipc-server=@"$SOCAT_NAME" --quiet $MM_HOME/queue/
+		mpv --no-video --volume="$volume" --input-ipc-server=@"$SOCAT_NAME" --quiet $MM_HOME/queue/
+		;;
+	ans)
+		echo mpv --no-video --volume="$volume" --input-ipc-server=@"$SOCAT_NAME" --quiet $MM_HOME/queue/
 		;;
 	play)
-		mpv --no-video --input-ipc-server=@"$SOCAT_NAME" --quiet "$1" ;;
+		mpv --no-video --volume="$volume" --input-ipc-server=@"$SOCAT_NAME" --quiet "$1" ;;
 	pause) control '{ "command": ["cycle", "pause"] }' ;;
 	forward) control '{ "command": ["seek", "+2"] }' ;;
 	backward) control '{ "command": ["seek", "-2"] }' ;;
-	vdown) control '{ "command": ["add", "volume", "-2"] }' ;;
-	vup) control '{ "command": ["add", "volume", "+2"] }' ;;
+	vdown) voldown ;;
+	vup) volup ;;
 esac
