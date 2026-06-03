@@ -25,7 +25,7 @@ resized() {
 
 
 clear_screan() {
-	printf '\e[60H\e[1J'
+	printf '\e[%sH\e[1J' $LINES
 }
 
 read_stats() {
