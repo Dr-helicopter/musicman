@@ -3,16 +3,19 @@
 source ~/scripts/MusicMan/main.sh
 
 
-bar_position=4
+tab_bar_position=4
+vol_bar_position=3
 
+# the terminal likes to auto update the COLUMNS and LINES variables
+# but i found that to be unreliable and rether work with my own 
 get_vars() {
-	LINES=$1 
-	COLUMNS=$(($2-1))
+	tLINES=$1 
+	tCOLUMNS=$(($2-1))
 }
 get_terminal_size() {
 #    read -r LINES COLUMNS < <(stty size)
 	get_vars $(stty size)
-	((max_items=LINES - 7))
+	((max_items=tLINES - 7))
 }
 
 resized() {
@@ -20,12 +23,13 @@ resized() {
 	get_vars $(stty size)
 	clear_screan
 	update_tab_bar
+	update_vol_bar
 	print_page
 }
 
 
 clear_screan() {
-	printf '\e[%sH\e[1J' $LINES
+	printf '\e[%sH\e[1J' $tLINES
 }
 
 read_stats() {
@@ -46,9 +50,10 @@ read_songs() {
 	songs_list=("$MUSICDIR"/*/*/*)
 }
 
+
 print_line() {
 	if [[ $1 == $cursor_item ]] ; then
-		color_code="\e[${bar_fg3:=32};${bar_bg3:=101}m"
+		color_code="\e[${fg4:=32};${bg5:=101}m"
 	else 
 		unset color_code
 	fi
@@ -67,6 +72,7 @@ display_update() {
 
 print_page() {
 	clear_screan
+	echo "$VOL_BAR"
 	echo "$TAB_BAR"
 	case $TAB in
 		0) 
@@ -92,8 +98,8 @@ print_page() {
 # this will only update the tab bar value
 # in order to display the bar we echo the TAB_BAR variable (has to be quted)
 update_tab_bar(){ 
-	local code0="\e[${bar_fg0:=37};${bar_bg0:=104}m"
-	local code1="\e[${bar_fg1:=37};${bar_bg1:=105}m"
+	local code0="\e[${fg0:=37};${bg0:=104}m"
+	local code1="\e[${fg1:=37};${bg1:=105}m"
 	local aritst_tab=" ${code0} artist"
 	local album_tab=" ${code0} album"
 	local song_tab=" ${code0} song"
@@ -104,11 +110,24 @@ update_tab_bar(){
 	esac
 
 	TAB_BAR=$(printf "\
-\e[${bar_position}H\
+\e[${tab_bar_position}H\
 $code0%*s\r%s \
 ${aritst_tab}${album_tab}${song_tab}\
 \e[m" \
-"$COLUMNS" "|" "" )
+"$tCOLUMNS" "|" "" )
+}
+
+# sr+imilarly we echo VOL_BAR when we fell like it
+update_vol_bar() {
+	local code2="\e[${fg2:=31};${bg2:=107}m"
+	local code3="\e[${fg3:=37};${bg3:=42}m"
+	local filled=$(($tCOLUMNS*volume/200))
+
+	VOL_BAR=$( printf "\
+\e[${vol_bar_position}H\
+$code2%*s\r$code3%*s\r ${volume}\
+\e[m" \
+"$(($tCOLUMNS))" '|' "$filled" '|')
 }
 
 cursor_up() {
@@ -259,8 +278,7 @@ run_command() {
 			exit 0 
 			;;
 		"chg tn")
-			if [[ $TAB == 1 ]] then
-				
+			if [[ $TAB == 1 ]]; then
 				local alb_path="${albums_list[$cursor_item]}"
 				local alb=${alb_path##*/}
 				local art_path=${alb_path%/*}
@@ -331,8 +349,18 @@ key() {
 			# playback Handle  VVV
 			#
 			$'\e2'|$'\e ') ~/scripts/MusicMan/player.sh pause ;;
-			$'\e1'|$'\es') ~/scripts/MusicMan/player.sh vdown ;;
-			$'\e3'|$'\ew') ~/scripts/MusicMan/player.sh vup ;;
+			$'\e1'|$'\es') 
+				~/scripts/MusicMan/player.sh vdown 
+				volume=$(cat /dev/shm/musicman_volume)
+				update_vol_bar
+				echo "$VOL_BAR"
+				;;
+			$'\e3'|$'\ew') 
+				~/scripts/MusicMan/player.sh vup 
+				volume=$(cat /dev/shm/musicman_volume)
+				update_vol_bar
+				echo "$VOL_BAR"
+				;;
 			$'\ed') ~/scripts/MusicMan/player.sh forward ;;
 			$'\ea') ~/scripts/MusicMan/player.sh backward ;;
 
@@ -354,7 +382,9 @@ main() {
 	read_albums
 	read_songs
 	read_stats
+	_mmGetVol
 	update_tab_bar
+	update_vol_bar
 	print_page
 
 	trap 'resized' WINCH

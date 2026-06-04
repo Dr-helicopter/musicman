@@ -4,11 +4,25 @@
 
 export MUSICDIR=~/Music
 
-MM_HOME="${XDG_STATE_HOME:-$HOME/.local/state}/muicman"
+MM_HOME="${XDG_STATE_HOME:-$HOME/.local/state}/musicman"
+SHM_VOL="/dev/shm/musicman_volume"
 tmpfile="${MM_HOME}/tmpfile"
 
 mkdir -p "$MM_HOME"
 
+
+_mmGetVol() {
+	# try reading from ram first
+	# fallback to disk if ram cache doesnt exist
+	if [[ -f "$SHM_VOL" ]]; then
+		volume=$(cat "$SHM_VOL")
+	else 
+		volume=50
+		[[ -f "$MM_HOME/volume" ]] &&
+			volume=$(cat "$MM_HOME/volume")
+		echo "$volume" > "$SHM_VOL" # create the ram cache
+	fi
+}
 
 _debug_data() {
 	echo "$mmARTIST"
