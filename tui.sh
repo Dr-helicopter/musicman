@@ -20,7 +20,6 @@ get_terminal_size() {
 
 resized() {
 	get_terminal_size
-	get_vars $(stty size)
 	clear_screan
 	update_tab_bar
 	update_vol_bar
@@ -47,7 +46,7 @@ read_albums() {
 }
 
 read_songs() {
-	songs_list=("$MUSICDIR"/*/*/*)
+	songs_list=("$MUSICDIR"/*/*/*.mp3)
 }
 
 
@@ -117,7 +116,7 @@ ${aritst_tab}${album_tab}${song_tab}\
 "$tCOLUMNS" "|" "" )
 }
 
-# sr+imilarly we echo VOL_BAR when we fell like it
+# similarly we echo VOL_BAR when we feel like it
 update_vol_bar() {
 	local code2="\e[${fg2:=31};${bg2:=107}m"
 	local code3="\e[${fg3:=37};${bg3:=42}m"
@@ -192,9 +191,7 @@ go_tab() {
 		*) ;;
 	esac
 
-	if (( 0 > "$1" || "$1" > 2 )); then
-		return 0
-	fi
+	(( 0 > "$1" || "$1" > 2 )) && return 0
 
 	TAB=$1
 	echo $TAB > $MM_HOME/tab
@@ -211,7 +208,7 @@ select_item() {
 			go_tab 1
 			;;
 		1)
-			songs_list=( "${albums_list[$1]}"/* )
+			songs_list=( "${albums_list[$1]}"/*.mp3 )
 			t2cursor_item=0
 			t2prefix="${albums_list[$1]}"
 			go_tab 2
