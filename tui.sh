@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 source ~/scripts/MusicMan/main.sh
 
@@ -38,15 +38,19 @@ read_stats() {
 }
 
 read_artists() {
-	artists_list=("$MUSICDIR"/*)
+	artist_list=("$MUSICDIR"/*)
 }
 
 read_albums() {
-	albums_list=("$MUSICDIR"/*/*)
+	album_list=("$MUSICDIR"/*/*)
+	album_display_list=("${album_list[@]#$MUSICDIR/}")
+	album_display_list=("${album_display_list[@]/\// - }")
 }
 
 read_songs() {
-	songs_list=("$MUSICDIR"/*/*/*.mp3)
+	song_list=("$MUSICDIR"/*/*/*.mp3)
+	song_display_list=("${song_list[@]#$MUSICDIR/}")
+	song_display_list=("${song_display_list[@]/\/*\// - }")
 }
 
 
@@ -57,7 +61,7 @@ print_line() {
 		unset color_code
 	fi
 
-	printf "\e[$(($1+6))H${color_code}%3d    %s\n\e[m" $1 "${display_list[$1]}"
+	printf "\e[$(($1+6))H${color_code}%3d    %s\n\e[m" $(($1+1)) "${display_list[$1]}"
 }
 
 display_update() {
@@ -75,16 +79,16 @@ print_page() {
 	echo "$TAB_BAR"
 	case $TAB in
 		0) 
-			display_list=("${artists_list[@]#$MUSICDIR/}")
+			display_list=("${artist_list[@]#$MUSICDIR/}")
 			display_update
 			;;
 		1) 
-			display_list=("${albums_list[@]#$t1prefix/}")
+			display_list=("${album_display_list[@]}")
 			display_update
 			;;
 		2) 
-			display_list=("${songs_list[@]#$t2prefix/}")
-			display_list=("${display_list[@]%.mp3}")
+			display_list=("${song_display_list[@]}")
+			#display_list=("${display_list[@]%.mp3}")
 			display_update
 			;;
 
@@ -202,19 +206,46 @@ go_tab() {
 select_item() {
 	case "$TAB" in
 		0)
-			albums_list=( "${artists_list[$1]}"/* )
+			album_list=( "${artist_list[$1]}"/* )
+			album_display_list=("${album_list[@]##*/}")
 			t1cursor_item=0 
-			t1prefix="${artists_list[$1]}"
 			go_tab 1
 			;;
 		1)
-			songs_list=( "${albums_list[$1]}"/*.mp3 )
+			song_list=( "${album_list[$1]}"/*.mp3 )
+			song_display_list=( "${song_list[@]##*/*:}" )
 			t2cursor_item=0
-			t2prefix="${albums_list[$1]}"
 			go_tab 2
 			;;
 		2)
-			~/scripts/MusicMan/player.sh play "${songs_list[$1]}" &> /dev/null &
+			~/scripts/MusicMan/player.sh play "${song_list[$1]}" &> /dev/null &
+			;;
+		*)
+			command ...
+			;;
+	esac
+}
+
+select_all() {
+	case "$TAB" in
+		0)
+			read_albums
+			t1cursor_item=0 
+			go_tab 1
+			;;
+		1)
+
+			song_list=()
+			for a in "${album_list[@]}"; do
+				song_list+=( "$a"/*.mp3 )
+			done
+			song_display_list=( "${song_list[@]#$MUSICDIR/}" )
+			song_display_list=("${song_display_list[@]/\/*:/ - }")
+			t2cursor_item=0
+			go_tab 2
+			;;
+		2)
+			~/scripts/MusicMan/player.sh play "${song_list[$1]}" &> /dev/null &
 			;;
 		*)
 			command ...
@@ -276,14 +307,14 @@ run_command() {
 			;;
 		"chg tn")
 			if [[ $TAB == 1 ]]; then
-				local alb_path="${albums_list[$cursor_item]}"
+				local alb_path="${album_list[$cursor_item]}"
 				local alb=${alb_path##*/}
 				local art_path=${alb_path%/*}
 				local art=${art_path##*/}
 
 				~/scripts/MusicMan/editor.sh reord "$art" "$alb"
 			elif [[ $TAB == 2 ]]; then
-				_mmGetTags "${songs_list[$cursor_item]}"
+				_mmGetTags "${song_list[$cursor_item]}"
 				open_cmd -n 'give number '
 				if [[ "$last_cmd_reply" =~ ^[0-9]+$ ]]; then
 					mmChangeTrackNo "$mmARTIST" "$mmALBUM" "$mmTITLE" "$last_cmd_reply"
@@ -313,59 +344,59 @@ key() {
     }
 
     case ${special_key:-$1} in
-			q) exit 0 ;;
-			d) go_tab + ;;
-			a) go_tab - ;;
-			ar) go_tab 0 ;;
-			al) go_tab 1 ;;
-			sg) go_tab 2 ;;
-			s) 
-				cursor_down
-				printf '\e[5H'
-				;;
-			w) 
-				cursor_up
-				printf '\e[5H'
-				;;
-			e|' ') 
-				select_item $cursor_item
-				unset selection
-				;;
-			'')
-				selection="${selection%?}"
-				printf '\e[5H %s ' $selection
-				;;
-			A)
-				~/scripts/MusicMan/player.sh  queue "${songs_list[@]}" &> /dev/null &
-				;;
-			
-			c)
-				open_cmd
-				run_command "$last_cmd_reply"
-				;;
-			# playback Handle  VVV
-			#
-			$'\e2'|$'\e ') ~/scripts/MusicMan/player.sh pause ;;
-			$'\e1'|$'\es') 
-				~/scripts/MusicMan/player.sh vdown 
-				volume=$(cat /dev/shm/musicman_volume)
-				update_vol_bar
-				echo "$VOL_BAR"
-				;;
-			$'\e3'|$'\ew') 
-				~/scripts/MusicMan/player.sh vup 
-				volume=$(cat /dev/shm/musicman_volume)
-				update_vol_bar
-				echo "$VOL_BAR"
-				;;
-			$'\ed') ~/scripts/MusicMan/player.sh forward ;;
-			$'\ea') ~/scripts/MusicMan/player.sh backward ;;
+		q) exit 0 ;;
+		d) go_tab + ;;
+		a) go_tab - ;;
+		ar) go_tab 0 ;;
+		al) go_tab 1 ;;
+		sg) go_tab 2 ;;
+		s) 
+			cursor_down
+			printf '\e[5H'
+			;;
+		w) 
+			cursor_up
+			printf '\e[5H'
+			;;
+		e|' ') 
+			select_item $cursor_item
+			unset selection
+			;;
+		'')
+			selection="${selection%?}"
+			printf '\e[5H %s ' $selection
+			;;
+		A)
+			select_all
+			;;
+		
+		c)
+			open_cmd
+			run_command "$last_cmd_reply"
+			;;
+		# playback Handle  VVV
+		#
+		$'\e2'|$'\e ') ~/scripts/MusicMan/player.sh pause ;;
+		$'\e1'|$'\es') 
+			~/scripts/MusicMan/player.sh vdown 
+			volume=$(cat /dev/shm/musicman_volume)
+			update_vol_bar
+			echo "$VOL_BAR"
+			;;
+		$'\e3'|$'\ew') 
+			~/scripts/MusicMan/player.sh vup 
+			volume=$(cat /dev/shm/musicman_volume)
+			update_vol_bar
+			echo "$VOL_BAR"
+			;;
+		$'\ed') ~/scripts/MusicMan/player.sh forward ;;
+		$'\ea') ~/scripts/MusicMan/player.sh backward ;;
 
-			$'\ex') killall mpv ;;
+		$'\ex') killall mpv ;;
 
-			*)
-				true
-		esac
+		*)
+			true
+	esac
 }
 
 main() {
@@ -396,8 +427,5 @@ cursor_item=0
 t0cursor_item=0
 t1cursor_item=0
 t2cursor_item=0
-
-t1prefix=$MUSICDIR
-t2prefix=$MUSICDIR
 
 main "$@"
