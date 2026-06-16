@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 source ~/scripts/MusicMan/main.sh
+playescript=~/scripts/MusicMan/player.new.sh
 
 
 tab_bar_position=4
@@ -218,7 +219,7 @@ select_item() {
 			go_tab 2
 			;;
 		2)
-			~/scripts/MusicMan/player.sh play "${song_list[$1]}" &> /dev/null &
+			$playescript enqueue $(($1+1)) "${song_list[@]}" &> /dev/null &
 			;;
 		*)
 			command ...
@@ -245,7 +246,7 @@ select_all() {
 			go_tab 2
 			;;
 		2)
-			~/scripts/MusicMan/player.sh play "${song_list[$1]}" &> /dev/null &
+			~/scripts/MusicMan/player.sh  queue "${song_list[@]}" &> /dev/null &
 			;;
 		*)
 			command ...
@@ -376,23 +377,23 @@ key() {
 			;;
 		# playback Handle  VVV
 		#
-		$'\e2'|$'\e ') ~/scripts/MusicMan/player.sh pause ;;
+		$'\e2'|$'\e ') $playescript pause ;;
 		$'\e1'|$'\es') 
-			~/scripts/MusicMan/player.sh vdown 
-			volume=$(cat /dev/shm/musicman_volume)
+			$playescript vdown 
+			volume=$(cat /dev/shm/musicman/vol)
 			update_vol_bar
 			echo "$VOL_BAR"
 			;;
 		$'\e3'|$'\ew') 
-			~/scripts/MusicMan/player.sh vup 
-			volume=$(cat /dev/shm/musicman_volume)
+			$playescript vup 
+			volume=$(cat /dev/shm/musicman/vol)
 			update_vol_bar
 			echo "$VOL_BAR"
 			;;
-		$'\ed') ~/scripts/MusicMan/player.sh forward ;;
-		$'\ea') ~/scripts/MusicMan/player.sh backward ;;
+		$'\ed') $playescript forward ;;
+		$'\ea') $playescript backward ;;
 
-		$'\ex') killall mpv ;;
+		$'\ex') killall aplay ;;
 
 		*)
 			true

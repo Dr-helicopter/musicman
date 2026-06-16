@@ -1,0 +1,281 @@
+#!/usr/bin/env bash
+
+
+# ==============================================================================
+# variable setups
+SHM_DIR=/dev/shm/musicman
+
+CONTROL_PIPE=$SHM_DIR/control.fifo
+PID_PIPE=$SHM_DIR/pid.fifo
+LOCKFILE=$SHM_DIR/musicman.lock
+VOLFILE=$SHM_DIR/vol
+TIMEFILE=$SHM_DIR/time
+
+mkdir -p $SHM_DIR
+# ==============================================================================
+
+
+# ==============================================================================
+# if ran as simple control manager then we don need any the rest of the script
+send_to_pipe() {
+    # open fifp on FD 3
+    exec 3> "$CONTROL_PIPE"
+
+    # here we first send the number of arguments passed to the daemon
+	# then the rest follows
+    echo "$#" >&3
+    for i in "$@"; do
+        echo "$i" >&3
+    done
+    
+    # close FD 3
+    exec 3>&-
+}
+
+# check for the file
+exec 9>"$LOCKFILE"
+
+# deliver the messege and fuck off if the file is locked
+if ! flock -n 9; then
+	send_to_pipe "$@"
+	exit 0
+fi
+# ==============================================================================
+
+# self explanetory
+read_state() {
+	if [[ -f $VOLFILE ]]; then
+		VOL=$(<$VOLFILE)
+	else
+		VOL=50
+		echo $VOL > $VOLFILE
+	fi
+}
+
+# this is the heart of the system
+play() {
+	(
+		# translation:
+		# play the song
+		# from the index
+		# output 16 bit 44.1 khz raw PCM into stdout
+		# give it to od to turn it into workable numbers
+		# give that to awk to multiply it by a number (our volume)
+		# awk actully reads the volume from a file in ram 
+		# and thats how we know what the current volume is
+		# while youre there count the number of second passed from the track
+		# putput the whole thing in raw bytes
+		# (notice the LC_ALL env var that we passed that sets the locale
+		# which ensures that we get true bytes in the output or something
+		# or im gussing thats the case. i debuged that part with AI
+		# and it suggested this. it doesnt work  without it.)
+		# feed the whole thing to aplay and voila !!
+		ffmpeg -i "$current_track" \
+			-ss "$time_index" \
+			-f s16le -ac 2 -ar 44100 - 2>/dev/null | \
+		od -v -An -t d2 -w2 | \
+		LC_ALL=C awk '
+		BEGIN {
+			vol = 0.5
+			samples_per_sec = 88200
+			vol_file = "'"$VOLFILE"'"
+			time_file = "'"$TIMEFILE"'"
+		
+			bytes_per_sec = 176400
+			byte_count = 0
+			last_second = -1 
+			start = '$time_index'
+		}
+		{
+			# multiply the vol by vol
+			v = int($1 * vol)
+			if (v < 0) v += 65536
+
+			# handle the heigh and low byte
+			printf("%c%c", v % 256, int(v / 256))
+
+			if (NR % 4000 == 1) {
+				if ((getline < vol_file) > 0) {
+					vol = $0 / 100
+				}
+				close(vol_file)
+			}
+
+		byte_count += 2
+		current_second = start + int(byte_count / bytes_per_sec)
+
+		# update the time file only when the second changes
+		if (current_second != last_second) {
+			print current_second > time_file
+			close(time_file)
+			last_second = current_second
+		}
+
+		# flush output for responsiveness
+		if (NR % 4000 == 0) fflush()
+
+		}' | \
+		aplay -f S16_LE -c 2 -r 44100 &>/dev/null &
+
+		# this part is one of the ugliest workarounds ive done
+		# we want the pid of aplay in this pipeline 
+		# we also want to knwo when the pipe line terminates 
+		# so we can go to the next song 
+		# we can send the program to the bg and get the pid no problem
+		# but if we then try to wait for the pid to terminate 
+		# we have to keep the prgram waiting 
+		# we cant send the wait to bg cause wait only works on the process's own children
+		# and if we send the wait to the bg with the aplay pipeline we cant get the aplay pid 
+		# cuse we are in a child process and cant send things to the outside world 
+		# and for some reason getting the subshell's pid and trying to kill that also wont work 
+		# so i setup a pipe to the outside world to send the pid throw it 
+		# this is ugly and im sure will cause truble in the feuture
+		# i wish you good luck reader
+		tpid=$!
+		echo $tpid > $PID_PIPE
+		wait $tpid
+		stat=$?
+		if [[ $stat == 0 ]]; then
+			send_to_pipe next
+		fi
+	) &
+	read -r player_pid < $PID_PIPE
+	echo $player_pid
+}
+
+set_queue() {
+	> $SHM_DIR/queue
+	for i in "$@"; do
+		echo "$i" >> $SHM_DIR/queue
+	done
+	# empty the queue and refill
+}
+
+enqueue() {
+	if [[ $1 =~ ^[0-9]$ ]]; then
+		queue_index=$1
+		shift
+	else
+		queue_index=1
+	fi
+	echo $queue_index > $SHM_DIR/queue_index
+
+	set_queue "$@"
+	
+	# find the file based on the index 
+	# set the time index
+	# kill some process on your way 
+	# play the song 
+	# this is pritty self explantory
+	current_track=$(head -n $queue_index "$SHM_DIR/queue" | tail -n 1)
+	time_index=0
+	kill -9 $player_pid &>/dev/null
+	play &> /dev/null
+}
+
+
+# ==============================================================================
+# make sure the cursed pipeline exists
+[[ ! -p "$CONTROL_PIPE" ]] &&
+	mkfifo "$CONTROL_PIPE"
+[[ ! -p "$PID_PIPE" ]] &&
+	mkfifo "$PID_PIPE"
+
+read_state
+
+# this is the main controll loop daemon
+# its the brain of this whole thing
+(	
+	# this is the start of the daemon so we dont need to get the-
+	# data from $CONTROL_PIPE yet
+	cmd=$1
+	shift
+	args=( "${@}" )
+
+	while true; do
+        case "$cmd" in
+			"enqueue")	# just give it a list of files
+				[[ -n $player_pid ]] && kill $player_pid &> /dev/null
+				enqueue "${args[@]}"
+				;;
+			"vup") # stands for volume up
+				# we just need to change the file awk reads it allby itself
+				vol=$(cat $VOLFILE)
+				vol=$((vol + 5))
+				((vol > 100)) && vol=100
+				echo $vol>$VOLFILE
+				;;
+			"vdown") # stands for volume down
+				vol=$(cat $VOLFILE)
+				vol=$((vol - 5))
+				((vol < 0)) && vol=0
+				echo $vol>$VOLFILE
+				# now there is reason why we are doing things this way
+				# and not just restarting the player pipeline 
+				;;
+			"pause") 
+				# its a crude way of doing things but it works
+				kill -STOP $player_pid &> /dev/null
+				;;
+			"resume")
+				kill -CONT $player_pid &> /dev/null
+				;;
+			"forward")
+				# adjust the time_index (its the time passed in seconds)
+				# and recreate the pipeline 
+				# (i did try to do some fancy shit with more fifo pipes 
+				# and awk, but they all had issues 
+				# even tho its ineffecient, this just worked the cleanest)
+				time_index=$(($(<$TIMEFILE)+10))
+				[[ -n $player_pid ]] && kill $player_pid &> /dev/null
+				play &> /dev/null
+				;;
+			"backward")
+				# same as above
+				time_index=$(($(<$TIMEFILE)-10))
+				((time_index < 0)) && time_index=0
+				[[ -n $player_pid ]] && kill $player_pid &> /dev/null
+				play &> /dev/null
+
+				;;
+			"next")
+				# same as above too 
+				# it just works with $current_track insted of $time_index
+				((queue_index++))
+				current_track=$(head -n $queue_index "$SHM_DIR/queue" | tail -n 1)
+				time_index=0
+				kill -9 $player_pid &>/dev/null
+				play &> /dev/null
+				;;
+			"kill")
+				# KILL !
+				rm $LOCKFILE
+				[[ -n $player_pid ]] && kill -9 "$player_pid" &> /dev/null
+				[[ -n $player_pid ]] && kill -9 "$taker_loop_pid" &> /dev/null
+				exit 0
+				;;
+        esac
+
+		# open the fifo for reading on FD 3 
+		# (this is one of the coolest things i disoverd while working on this) 
+		exec 3< "/dev/shm/musicman/control.fifo"
+
+
+		# read the data from the pipe and go back to the start of the loop
+		if IFS= read -r count <&3; then
+			IFS= read -r cmd <&3
+
+			args=()
+			for ((i=1; i<count; i++)); do
+				if IFS= read -r val <&3; then
+					args+=("$val")
+				else
+					break
+				fi
+			done
+		fi
+	done
+) & disown
+# ^^^^^^^^ importent for keeping thing alive
+# ==============================================================================
+
