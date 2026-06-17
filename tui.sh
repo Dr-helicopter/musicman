@@ -5,10 +5,23 @@
 source ~/scripts/MusicMan/main.sh
 playescript=~/scripts/MusicMan/player.new.sh
 
+SHM_DIR=/dev/shm/musicman
+FILEPATHFILE="$SHM_DIR"/file_path
+MAXTIMEFILE=$SHM_DIR/maxtime
+NAMEFILE=$SHM_DIR/name
+ARTISTFILE=$SHM_DIR/artist
+ARLBUMFILE=$SHM_DIR/album
 
-tab_bar_position=4
-vol_bar_position=3
-time_bar_position=2
+title_bar_position=1
+song_bar_position=2
+time_bar_position=3
+vol_bar_position=4
+tab_bar_position=5
+
+time=50
+maxtime=100
+
+MM_TITLE="MUSIC-MAN"
 # ==============================================================================
 
 # the terminal likes to auto update the COLUMNS and LINES variables
@@ -32,6 +45,8 @@ clear_screan() {
 resized() {
 	get_terminal_size
 	clear_screan
+	update_title_bar
+	update_song_bar
 	update_tab_bar
 	update_vol_bar
 	print_page
@@ -80,8 +95,7 @@ display_update() {
 
 print_page() {
 	clear_screan
-	echo "$VOL_BAR"
-	echo "$TAB_BAR"
+	echo "$TITLE_BAR$SONG_BAR$TIME_BAR$VOL_BAR$TAB_BAR"
 	case $TAB in
 		0) 
 			display_list=("${artist_list[@]#$MUSICDIR/}")
@@ -103,8 +117,9 @@ print_page() {
 
 
 
-# this will only update the tab bar value
-# in order to display the bar we echo the TAB_BAR variable (has to be quted)
+# ==============================================================================
+# this part is mostly escape code wizardry
+# we bake the variables and echo them when we need to
 update_tab_bar(){ 
 	local code0="\e[${fg0:=37};${bg0:=104}m"
 	local code1="\e[${fg1:=37};${bg1:=105}m"
@@ -125,11 +140,29 @@ ${aritst_tab}${album_tab}${song_tab}\
 "$tCOLUMNS" "|" "" )
 }
 
-# similarly we echo VOL_BAR when we feel like it
+update_title_bar() {
+	local code0="\e[${MM_TITLE_FG:=31};${MM_TITLE_BG:=40}m"
+	local len="${#MM_TITLE}"
+	local spaces=$(( (tCOLUMNS-len) / 2 ))
+	
+	TITLE_BAR=$(printf "\
+\e[${title_bar_position}H\
+$code0%*s%s%*s" \
+"$spaces" "" "$MM_TITLE" $((tCOLUMNS-spaces-len)) "")
+}
+
+update_song_bar() {
+	local code0="\e[${MM_SONG_FG:=34};${MM_SONG_BG:=40}m"
+	SONG_BAR=$(printf "\
+\e[${song_bar_position}H\
+${code0}%*s\r%s" \
+"$tCOLUMNS" "" "$display_format")
+}
+
 update_vol_bar() {
-	local code2="\e[${fg2:=31};${bg2:=107}m"
+	local code2="\e[${fg2:=31};${MM_VOLBAR_EMPTY_BG:=100}m"
 	local code3="\e[${fg3:=37};${bg3:=42}m"
-	local filled=$(($tCOLUMNS*volume/200))
+	local filled=$(($tCOLUMNS*volume/130))
 
 	VOL_BAR=$( printf "\
 \e[${vol_bar_position}H\
@@ -139,16 +172,34 @@ $code2%*s\r$code3%*s\r ${volume}\
 }
 
 update_time_bar() {
-	local code2="\e[${fg2:=31};${bg2:=107}m"
-	local code3="\e[${fg3:=37};${bg3:=42}m"
-	local filled=$(($tCOLUMNS*volume/200))
+	[[ -f $SHM_TIME ]] && time=$(<$SHM_TIME)
+	[[ -z $time ]] && return
+	local code2="\e[${fg2:=34};${MM_SEEKBAR_EMPTY_BG:=40}m"
+	local code1="\e[${fg3:=37};${MM_SEEKBAR_FILED_BG:=44}m"
+	time_bar_filled=$(($tCOLUMNS*$time/$maxtime))
 
-	time=$(<$SHM_TIME)
 	TIME_BAR=$( printf "\
 \e[${time_bar_position}H\
-${time}      $(<$SHM_NAME)"
-)
+$code2%*s\r$code1%*s\r ${time}\
+\e[m" \
+"$(($tCOLUMNS))" '|' "$time_bar_filled" '|')
 }
+
+
+# this is for the data that changes once whenever the ong changes
+song_status_check() {
+	[[ -f "$FILEPATHFILE" && "$file_path" != "$(<$FILEPATHFILE)" ]] && {
+
+		display_format="playing : $(<$NAMEFILE) - $(<$ARTISTFILE) - $(<$ARLBUMFILE)"
+		[[ -f $MAXTIMEFILE ]] && maxtime=$(<$MAXTIMEFILE)
+		[[ -z $maxtime ]] && maxtime=100
+		file_path=$(<$FILEPATHFILE)
+
+		update_song_bar
+		echo "$SONG_BAR"
+	}
+}
+# ==============================================================================
 
 cursor_up() {
 	if ((cursor_item > 0)); then
@@ -393,16 +444,16 @@ key() {
 			;;
 		# playback Handle  VVV
 		#
-		$'\e2'|$'\e ') $playescript pause ;;
+		$'\e2'|$'\e ') $playescript pause-play ;;
 		$'\e1'|$'\es') 
-			$playescript vdown 
-			volume=$(cat /dev/shm/musicman/vol)
+			volume=$(($(cat /dev/shm/musicman/vol)-3))
+			$playescript vdown 3 
 			update_vol_bar
 			echo "$VOL_BAR"
 			;;
 		$'\e3'|$'\ew') 
-			$playescript vup 
-			volume=$(cat /dev/shm/musicman/vol)
+			volume=$(($(cat /dev/shm/musicman/vol)+3))
+			$playescript vup 3
 			update_vol_bar
 			echo "$VOL_BAR"
 			;;
@@ -417,6 +468,7 @@ key() {
 }
 
 main() {
+	mkdir -p $SHM_DIR
     ((BASH_VERSINFO[0] > 3)) &&
         read_flags=(-t 1)
 
@@ -428,8 +480,11 @@ main() {
 	read_songs
 	read_stats
 	_mmGetVol
+	update_title_bar
+	update_song_bar
 	update_tab_bar
 	update_vol_bar
+	update_time_bar
 	print_page
 
 	trap 'resized' WINCH
@@ -437,6 +492,7 @@ main() {
 	while :; do
 		read "${read_flags[@]}" -rsn1 && key "$REPLY"
         [[ -t 1 ]] || exit 1
+		song_status_check
 		update_vol_bar
 		update_time_bar
 		echo "$TIME_BAR"

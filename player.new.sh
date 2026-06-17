@@ -10,7 +10,11 @@ PID_PIPE=$SHM_DIR/pid.fifo
 LOCKFILE=$SHM_DIR/musicman.lock
 VOLFILE=$SHM_DIR/vol
 TIMEFILE=$SHM_DIR/time
+MAXTIMEFILE=$SHM_DIR/maxtime
 NAMEFILE=$SHM_DIR/name
+ARTISTFILE=$SHM_DIR/artist
+ARLBUMFILE=$SHM_DIR/album
+FILEPATHFILE="$SHM_DIR"/file_path
 
 mkdir -p $SHM_DIR
 # ==============================================================================
@@ -155,7 +159,7 @@ set_queue() {
 }
 
 enqueue() {
-	if [[ $1 =~ ^[0-9]$ ]]; then
+	if [[ $1 =~ ^[0-9]*$ ]]; then
 		queue_index=$1
 		shift
 	else
@@ -171,11 +175,22 @@ enqueue() {
 	# play the song 
 	# this is pritty self explantory
 	current_track=$(head -n $queue_index "$SHM_DIR/queue" | tail -n 1)
-	_mmGetTags "$current_track"
-	echo $mmTITLE > $NAMEFILE
+	export_data
 	time_index=0
 	kill -9 $player_pid &>/dev/null
 	play &> /dev/null
+}
+
+
+export_data() {
+	_mmGetTags "$current_track"
+	echo $mmTITLE > $NAMEFILE
+	echo $mmARTIST> $ARTISTFILE
+	echo $mmALBUM> $ARLBUMFILE
+	maxtime=$(ffprobe -v error -show_entries format=duration -of\
+		default=noprint_wrappers=1:nokey=1 "$current_track")
+	echo "${maxtime%.*}" > $MAXTIMEFILE
+	echo "$current_track" > $FILEPATHFILE
 }
 
 
@@ -203,17 +218,18 @@ read_state
 			"enqueue")	# just give it a list of files
 				[[ -n $player_pid ]] && kill -9 $player_pid &> /dev/null
 				enqueue "${args[@]}"
+				play_stat=play
 				;;
 			"vup") # stands for volume up
 				# we just need to change the file awk reads it allby itself
 				vol=$(cat $VOLFILE)
-				vol=$((vol + ${args[1]:-2}))
+				((vol += ${args[1]:-2}))
 				((vol > 100)) && vol=100
 				echo $vol>$VOLFILE
 				;;
 			"vdown") # stands for volume down
 				vol=$(cat $VOLFILE)
-				vol=$((vol - ${args[1]:-2}))
+				((vol -= ${args[1]:-2}))
 				((vol < 0)) && vol=0
 				echo $vol>$VOLFILE
 				# now there is reason why we are doing things this way
@@ -222,9 +238,20 @@ read_state
 			"pause") 
 				# its a crude way of doing things but it works
 				kill -STOP $player_pid &> /dev/null
+				play_stat=pause
 				;;
 			"resume")
 				kill -CONT $player_pid &> /dev/null
+				play_stat=play
+				;;
+			"pause-play")
+				if [[ $play_stat = 'pause' ]]; then
+					kill -CONT $player_pid &> /dev/null
+					play_stat=play
+				else 
+					kill -STOP $player_pid &> /dev/null
+					play_stat=pause
+				fi
 				;;
 			"forward")
 				# adjust the time_index (its the time passed in seconds)
@@ -232,30 +259,23 @@ read_state
 				# (i did try to do some fancy shit with more fifo pipes 
 				# and awk, but they all had issues 
 				# even tho its ineffecient, this just worked the cleanest)
-				wait=1
 				time_index=$(($(<$TIMEFILE)+10))
 				[[ -n $player_pid ]] && kill -9 $player_pid &> /dev/null
 				play &> /dev/null
-				sleep 0.1
-				unset wait
 				;;
 			"backward")
 				# same as above
-				wait=1
 				time_index=$(($(<$TIMEFILE)-10))
 				((time_index < 0)) && time_index=0
 				[[ -n $player_pid ]] && kill -9 $player_pid &> /dev/null
 				play &> /dev/null
-				sleep 0.1
-				unset wait
 				;;
 			"next")
 				# same as above too 
 				# it just works with $current_track insted of $time_index
 				((queue_index++))
 				current_track=$(head -n $queue_index "$SHM_DIR/queue" | tail -n 1)
-				_mmGetTags $current_track
-				echo $mmTITLE > $NAMEFILE
+				export_data
 				time_index=0
 				kill -9 $player_pid &>/dev/null
 				play &> /dev/null
@@ -287,6 +307,10 @@ read_state
 				fi
 			done
 		fi
+		# we can technicaly not close the pipe and it should work just fine
+		# but i found it that the buffer filles up when recieving rapid commands
+			# and it just works better when we close it every time 
+    	exec 3>&-
 	done
 ) & disown
 # ^^^^^^^^ importent for keeping thing alive
