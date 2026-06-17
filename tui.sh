@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 
+# ==============================================================================
+# innitial setup
 source ~/scripts/MusicMan/main.sh
 playescript=~/scripts/MusicMan/player.new.sh
 
 
 tab_bar_position=4
 vol_bar_position=3
+time_bar_position=2
+# ==============================================================================
 
 # the terminal likes to auto update the COLUMNS and LINES variables
 # but i found that to be unreliable and rether work with my own 
@@ -19,6 +23,12 @@ get_terminal_size() {
 	((max_items=tLINES - 7))
 }
 
+
+clear_screan() {
+	printf '\e[%sH\e[1J' $tLINES
+}
+
+
 resized() {
 	get_terminal_size
 	clear_screan
@@ -26,12 +36,6 @@ resized() {
 	update_vol_bar
 	print_page
 }
-
-
-clear_screan() {
-	printf '\e[%sH\e[1J' $tLINES
-}
-
 read_stats() {
 	TAB=$(cat "$MM_HOME/tab" 2>/dev/null)
 	TAB=${TAB%%[!0-9]*}	# Remove everything after first non-digit
@@ -132,6 +136,18 @@ update_vol_bar() {
 $code2%*s\r$code3%*s\r ${volume}\
 \e[m" \
 "$(($tCOLUMNS))" '|' "$filled" '|')
+}
+
+update_time_bar() {
+	local code2="\e[${fg2:=31};${bg2:=107}m"
+	local code3="\e[${fg3:=37};${bg3:=42}m"
+	local filled=$(($tCOLUMNS*volume/200))
+
+	time=$(<$SHM_TIME)
+	TIME_BAR=$( printf "\
+\e[${time_bar_position}H\
+${time}      $(<$SHM_NAME)"
+)
 }
 
 cursor_up() {
@@ -402,7 +418,7 @@ key() {
 
 main() {
     ((BASH_VERSINFO[0] > 3)) &&
-        read_flags=(-t 1.5)
+        read_flags=(-t 1)
 
 
 	get_terminal_size
@@ -421,6 +437,11 @@ main() {
 	while :; do
 		read "${read_flags[@]}" -rsn1 && key "$REPLY"
         [[ -t 1 ]] || exit 1
+		update_vol_bar
+		update_time_bar
+		echo "$TIME_BAR"
+		echo "$VOL_BAR"
+		echo "$TAB_BAR"
 	done
 }
 

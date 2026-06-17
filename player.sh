@@ -7,7 +7,7 @@ SHM_VOL="/dev/shm/musicman_volume"
 
 
 control() {
-echo "$1"  | 
+echo "$1"  |
 	socat - ABSTRACT-CONNECT:"$SOCAT_NAME" &> /dev/null ||
 	return 2
 }

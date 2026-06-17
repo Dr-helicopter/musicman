@@ -5,7 +5,9 @@
 export MUSICDIR=~/Music
 
 MM_HOME="${XDG_STATE_HOME:-$HOME/.local/state}/musicman"
-SHM_VOL="/dev/shm/musicman_volume"
+SHM_VOL="/dev/shm/musicman/vol"
+SHM_TIME="/dev/shm/musicman/time"
+SHM_NAME="/dev/shm/musicman/name"
 tmpfile="${MM_HOME}/tmpfile"
 
 mkdir -p "$MM_HOME"

@@ -10,6 +10,7 @@ PID_PIPE=$SHM_DIR/pid.fifo
 LOCKFILE=$SHM_DIR/musicman.lock
 VOLFILE=$SHM_DIR/vol
 TIMEFILE=$SHM_DIR/time
+NAMEFILE=$SHM_DIR/name
 
 mkdir -p $SHM_DIR
 # ==============================================================================
@@ -42,6 +43,7 @@ if ! flock -n 9; then
 fi
 # ==============================================================================
 
+source ~/scripts/MusicMan/main.sh
 # self explanetory
 read_state() {
 	if [[ -f $VOLFILE ]]; then
@@ -70,6 +72,7 @@ play() {
 		# or im gussing thats the case. i debuged that part with AI
 		# and it suggested this. it doesnt work  without it.)
 		# feed the whole thing to aplay and voila !!
+		echo $time_index > "$TIMEFILE"
 		ffmpeg -i "$current_track" \
 			-ss "$time_index" \
 			-f s16le -ac 2 -ar 44100 - 2>/dev/null | \
@@ -83,7 +86,7 @@ play() {
 		
 			bytes_per_sec = 176400
 			byte_count = 0
-			last_second = -1 
+			last_second = '$time_index' 
 			start = '$time_index'
 		}
 		{
@@ -168,6 +171,8 @@ enqueue() {
 	# play the song 
 	# this is pritty self explantory
 	current_track=$(head -n $queue_index "$SHM_DIR/queue" | tail -n 1)
+	_mmGetTags "$current_track"
+	echo $mmTITLE > $NAMEFILE
 	time_index=0
 	kill -9 $player_pid &>/dev/null
 	play &> /dev/null
@@ -180,6 +185,7 @@ enqueue() {
 	mkfifo "$CONTROL_PIPE"
 [[ ! -p "$PID_PIPE" ]] &&
 	mkfifo "$PID_PIPE"
+
 
 read_state
 
@@ -195,19 +201,19 @@ read_state
 	while true; do
         case "$cmd" in
 			"enqueue")	# just give it a list of files
-				[[ -n $player_pid ]] && kill $player_pid &> /dev/null
+				[[ -n $player_pid ]] && kill -9 $player_pid &> /dev/null
 				enqueue "${args[@]}"
 				;;
 			"vup") # stands for volume up
 				# we just need to change the file awk reads it allby itself
 				vol=$(cat $VOLFILE)
-				vol=$((vol + 5))
+				vol=$((vol + ${args[1]:-2}))
 				((vol > 100)) && vol=100
 				echo $vol>$VOLFILE
 				;;
 			"vdown") # stands for volume down
 				vol=$(cat $VOLFILE)
-				vol=$((vol - 5))
+				vol=$((vol - ${args[1]:-2}))
 				((vol < 0)) && vol=0
 				echo $vol>$VOLFILE
 				# now there is reason why we are doing things this way
@@ -226,23 +232,30 @@ read_state
 				# (i did try to do some fancy shit with more fifo pipes 
 				# and awk, but they all had issues 
 				# even tho its ineffecient, this just worked the cleanest)
+				wait=1
 				time_index=$(($(<$TIMEFILE)+10))
-				[[ -n $player_pid ]] && kill $player_pid &> /dev/null
+				[[ -n $player_pid ]] && kill -9 $player_pid &> /dev/null
 				play &> /dev/null
+				sleep 0.1
+				unset wait
 				;;
 			"backward")
 				# same as above
+				wait=1
 				time_index=$(($(<$TIMEFILE)-10))
 				((time_index < 0)) && time_index=0
-				[[ -n $player_pid ]] && kill $player_pid &> /dev/null
+				[[ -n $player_pid ]] && kill -9 $player_pid &> /dev/null
 				play &> /dev/null
-
+				sleep 0.1
+				unset wait
 				;;
 			"next")
 				# same as above too 
 				# it just works with $current_track insted of $time_index
 				((queue_index++))
 				current_track=$(head -n $queue_index "$SHM_DIR/queue" | tail -n 1)
+				_mmGetTags $current_track
+				echo $mmTITLE > $NAMEFILE
 				time_index=0
 				kill -9 $player_pid &>/dev/null
 				play &> /dev/null

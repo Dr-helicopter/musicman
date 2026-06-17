@@ -28,7 +28,7 @@ cat > "$tmpfile" << EOF
 
 EOF
 
-	for i in "${MUSICDIR}/${1}/${2}/"* ; do
+	for i in "${MUSICDIR}/${1}/${2}/"*.mp3 ; do
 		_mmGetTags "$i"
 		printf '%s\t%s\n' "${mmTRACK}" "${i#$MUSICDIR/${1}/${2}/}" >> "$tmpfile"
 	done
