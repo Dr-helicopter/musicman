@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+#!/usr/bin/env bash
+#!/usr/bin/env bash
+#!/usr/bin/env bash
 # MusicMan
 # by dr.helicopter
 # 2026/04/28
@@ -9,24 +12,28 @@
 : ${MUSICDIR:=~/Music}
 : ${IMGVIEWR:='swayimg'}
 MM_HOME="${XDG_STATE_HOME:-$HOME/.local/state}/muicman"
-playescript=~/scripts/MusicMan/player.new.sh
+mkdir $MM_HOME
 
 SHM_DIR=/dev/shm/musicman
 VOLFILE=$SHM_DIR/vol
 FILEPATHFILE="$SHM_DIR"/file_path
 MAXTIMEFILE=$SHM_DIR/maxtime
+TIMEFILE=$SHM_DIR/time
 NAMEFILE=$SHM_DIR/name
 ARTISTFILE=$SHM_DIR/artist
 ARLBUMFILE=$SHM_DIR/album
 
-TMPFILE="$MM_HOME/TMPFILE"
+TMPFILE="$SHM_DIR/TMPFILE"
+
+
+: ${volume_step:=2}
 
 title_bar_position=1
 song_bar_position=2
 time_bar_position=3
 vol_bar_position=4
 tab_bar_position=5
-cmd_position=5
+cmd_position=6
 
 time=50
 maxtime=100
@@ -50,10 +57,10 @@ editor_song_meta() {
 # file ${1}
 # edit the vars as you please
 
-ARTIST=${ARTIST}
-TITLE=${TITLE}
-ALBUM=${ALBUM}
-TRACK=${TRACK}
+ARTIST='${ARTIST}'
+TITLE='${TITLE}'
+ALBUM='${ALBUM}'
+TRACK='${TRACK}'
 " > "$TMPFILE"
 	"${EDITOR:=vi}" "$TMPFILE"
 }
@@ -94,6 +101,7 @@ open_song_editor() {
 	echo in ose
 	editor_song_meta "$1"
 	source "$TMPFILE"
+	echo $ALBUM
 	> "$TMPFILE"
 }
 
@@ -247,7 +255,7 @@ _add_song() {
 	! get_tags "$1" && {
 		[[ ! -f "$1" ]] && echo the file $1 isnt && return 1
 		open_song_editor "$1"
-	} || ([[ $2 = '-e' ]] && open_song_editor "$1")
+	} || { [[ $2 = '-e' ]] && open_song_editor "$1"; }
 	echo $? aaa $ARTIST $ALBUM $TITLE $TRACK
 
 
@@ -302,7 +310,7 @@ get_vars() {
 get_terminal_size() {
 #    read -r LINES COLUMNS < <(stty size)
 	get_vars $(stty size)
-	((max_items=tLINES - 7))
+	((max_items=tLINES - 8))
 }
 
 
@@ -345,12 +353,13 @@ read_songs() {
 
 print_line() {
 	if [[ $1 == $cursor_item ]] ; then
-		color_code="\e[${fg4:=32};${bg5:=101}m"
+		color_code="\e[${CURSOR_FG:=30};${CURSOR_BG:=41}m"
 	else 
 		unset color_code
 	fi
 
-	printf "\e[$(($1+6))H${color_code}%3d    %s\n\e[m" $(($1+1)) "${display_list[$1]}"
+	printf "\e[$(($1+cmd_position+1))H${color_code}%3d    %s\n\e[m" \
+		$(($1+1)) "${display_list[$1]}"
 }
 
 display_update() {
@@ -389,7 +398,7 @@ print_page() {
 # this part is mostly escape code wizardry
 # we bake the variables and echo them when we need to
 update_tab_bar(){ 
-	local code0="\e[${fg0:=37};${bg0:=104}m"
+	local code0="\e[${fg0:=37};${TAB_BAR_BG:=44}m"
 	local code1="\e[${fg1:=37};${bg1:=105}m"
 	local aritst_tab=" ${code0} artist"
 	local album_tab=" ${code0} album"
@@ -427,7 +436,7 @@ ${code0}%*s\r%s" \
 update_vol_bar() {
 	local code2="\e[${fg2:=31};${MM_VOLBAR_EMPTY_BG:=100}m"
 	local code3="\e[${fg3:=37};${bg3:=42}m"
-	local filled=$(($tCOLUMNS*volume/130))
+	local filled=$(($tCOLUMNS*${volume:-50}/130))
 
 	VOL_BAR=$( printf "\
 \e[${vol_bar_position}H\
@@ -437,17 +446,14 @@ $code2%*s\r$code3%*s\r ${volume}\
 }
 
 update_time_bar() {
-	[[ -f $SHM_TIME ]] && time=$(<$SHM_TIME)
+	[[ -f $TIMEFILE ]] && time=$(<$TIMEFILE)
 	[[ -z $time ]] && return
 	local code2="\e[${fg2:=34};${MM_SEEKBAR_EMPTY_BG:=40}m"
 	local code1="\e[${fg3:=37};${MM_SEEKBAR_FILED_BG:=44}m"
 	time_bar_filled=$(($tCOLUMNS*$time/$maxtime))
 
-	TIME_BAR=$( printf "\
-\e[${time_bar_position}H\
-$code2%*s\r$code1%*s\r ${time}\
-\e[m" \
-"$(($tCOLUMNS))" '|' "$time_bar_filled" '|')
+	TIME_BAR=$( printf "\e[%sH$code2%*s\r$code1%*s\r ${time}\e[m" \
+	"$time_bar_position" "$(($tCOLUMNS))" '|' "$time_bar_filled" '|')
 }
 
 
@@ -679,9 +685,6 @@ key() {
 		q) exit 0 ;;
 		d) go_tab + ;;
 		a) go_tab - ;;
-		ar) go_tab 0 ;;
-		al) go_tab 1 ;;
-		sg) go_tab 2 ;;
 		s) 
 			cursor_down
 			printf "\e[${cmd_position}H"
@@ -690,15 +693,10 @@ key() {
 			cursor_up
 			printf "\e[${cmd_position}H"
 			;;
-		e|' ') 
+		e|$'\e ') 
 			select_item $cursor_item
-			unset selection
 			;;
-		'')
-			selection="${selection%?}"
-			printf '\e[5H %s ' $selection
-			;;
-		A)
+		'E')
 			select_all
 			;;
 		
@@ -708,24 +706,27 @@ key() {
 			;;
 		# playback Handle  VVV
 		#
-		$'\e2'|$'\e ') musicman-daemon pause-play ;;
-		$'\e1'|$'\es') 
-			volume=$(($(cat $VOLFILE)-3))
-			musicman-daemon vdown 3 
+		$'\e2'|' ') musicman-daemon pause-play ;;
+		$'\e1'|$'\es'|'S') 
+			volume=$(($(cat $VOLFILE)-volume_step))
+			musicman-daemon vdown $volume_step
 			update_vol_bar
 			echo "$VOL_BAR"
 			;;
-		$'\e3'|$'\ew') 
-			volume=$(($(cat $VOLFILE)+3))
-			musicman-daemon vup 3
+		$'\e3'|$'\ew'|'W') 
+			volume=$(($(cat $VOLFILE)+volume_step))
+			musicman-daemon vup $volume_step
 			update_vol_bar
 			echo "$VOL_BAR"
 			;;
-		$'\ed') musicman-daemon forward ;;
-		$'\ea') musicman-daemon backward ;;
+		$'\e5') musicman-daemon next ;;
+		$'\ed'|'D') musicman-daemon forward ;;
+		$'\ea'|'A') musicman-daemon backward ;;
 
-		$'\ex') killall aplay ;;
-
+		$'\ex') 
+			musicman-daemon kill
+			killall aplay
+			;;
 		*)
 			true
 	esac
@@ -743,6 +744,7 @@ tui() {
 	read_albums
 	read_songs
 	read_stats
+	[[ -f "$VOLFILE" ]] && volume=$(<$VOLFILE)
 	update_title_bar
 	update_song_bar
 	update_tab_bar
@@ -773,5 +775,8 @@ command="$1"
 shift
 case "$command" in
 	'add-song') add_song "$@" ;;
+	'vup') musicman-daemon vup;;
+	'pause-play') musicman-daemon pause-play;;
+	'vdown') musicman-daemon vdown;;
 	*) echo WTF ;;
 esac
