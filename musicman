@@ -105,11 +105,22 @@ open_song_editor() {
 	> "$TMPFILE"
 }
 
-_format_prefix_number() {
+format_prefix_number() {
     [[ "$1" =~ ^[0-9]+$ ]] &&
         printf "%02d" "$1" ||
         echo "xx"
 }
+
+
+format_album_dir() {
+	# we use substitution here to replace all instances of / with the unicode ∕
+	# to prevent extra nesting in the archive dir
+
+	local artist="${1////∕}"
+	local album="${2////∕}"
+	echo "$MUSICDIR/$artist/$album"
+}
+
 
 get_tags() {
 	[[ ! -f "$1" ]] && return 1
@@ -153,7 +164,7 @@ set_song_meta() {
 		-c:a copy -map 0:a \
 		${2:+-metadata artist="$2"} \
 		${3:+-metadata album="$3"} \
-		${4:+-metadata track="$(_format_prefix_number "$4")"} \
+		${4:+-metadata track="$(format_prefix_number "$4")"} \
 		${5:+-metadata title="$5"} \
 		${6:+-metadata date="$6"} \
 		-id3v2_version 3 \
@@ -184,7 +195,7 @@ merge_albums() { # artist $1 album $2 to artist $3 album $4
 
 
 handle_cover_art() {
-	local album_dir="$MUSICDIR/$ARTIST/$ALBUM"
+	local album_dir=$(format_album_dir "$ARTIST" "$ALBUM")
 	local tmp_cover="$SHM_DIR/incoming_cover.jpg"
 
 	# delete the cover file if it exists
@@ -230,10 +241,12 @@ handle_cover_art() {
 }
 
 change_track_no() {
-	! ( ls "$MUSICDIR/$1/$2" | grep -E "^..:$3.mp3$" &> /tmp/mmfnm ) &&
+	local album_dir="$MUSICDIR/${1////∕}/${2////∕}"
+	! ( ls "$album_dir" | grep -E "^..:$3.mp3$" &> /tmp/mmfnm ) &&
 		return 1
 
-	local file_name="$MUSICDIR/$1/$2/$(head -n 1 /tmp/mmfnm)"
+
+	local file_path="$album_dir/$(head -n 1 /tmp/mmfnm)"
 
 	# get tags else return 
 	get_tags "$file_name" || 
@@ -242,8 +255,8 @@ change_track_no() {
 	TRACK="$4"
 
 
-	local new_file_name="$MUSICDIR/$ARTIST/$ALBUM/$(format_number $TRACK):$TITLE".mp3
-	mv "$file_name" "$new_file_name"
+	local new_file_name="$album_dir/$(format_number $TRACK):$TITLE".mp3
+	mv "$file_path" "$new_file_name"
 
 	set_song_meta "$new_file_name" "$ARTIST" "$ALBUM" "$TRACK" "$TITLE" "$YEAR"
 }
@@ -256,13 +269,13 @@ _add_song() {
 		[[ ! -f "$1" ]] && echo the file $1 isnt && return 1
 		open_song_editor "$1"
 	} || { [[ $2 = '-e' ]] && open_song_editor "$1"; }
-	echo $? aaa $ARTIST $ALBUM $TITLE $TRACK
 
 
 	handle_cover_art "$1"
 
-	local album_dir="$MUSICDIR/$ARTIST/$ALBUM"
-	local file_name="$album_dir/$(_format_prefix_number $TRACK):$TITLE.mp3"
+	local album_dir=$(format_album_dir "$ARTIST" "$ALBUM")
+	local file_name="$(format_prefix_number ${TRACK}):${TITLE////∕}.mp3"
+	local file_path="$album_dir/$file_name"
 
 	local img_input=()
 
@@ -270,23 +283,24 @@ _add_song() {
 
 	[[ -f "$album_dir"/cover.jpg ]] && img_input=(-i "$album_dir"/cover.jpg -c:v mjpeg -map 1:v)
 
+	echo $file_path
 	ffmpeg -v quiet -y -i "$1" "${img_input[@]}" \
 		-map_metadata -1 \
 		-map_metadata:s:a -1 \
 		-c:a copy -map 0:a \
 		-metadata artist="$ARTIST" \
 		-metadata album="$ALBUM" \
-		-metadata track="$(_format_prefix_number $TRACK)" \
+		-metadata track="$(format_prefix_number $TRACK)" \
 		-metadata title="$TITLE" \
 		-metadata date="$YEAR" \
 		-id3v2_version 3 \
-		"$file_name"
+		"$file_path"
 }
 
 add_song() {
 	args=("$@")
 	for i in $(seq "${#args[@]}"); do 
-		[[ "${args[$i]}" = "-e" ]] && echo aaaa && 
+		[[ "${args[$i]}" = "-e" ]] && 
 			unset "args[$i]" && 
 			eflag='-e' 
 	done
