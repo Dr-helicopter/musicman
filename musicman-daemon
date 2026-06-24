@@ -9,27 +9,25 @@
 SHM_DIR=/dev/shm/musicman
 MM_HOME="${XDG_STATE_HOME:-$HOME/.local/state}/musicman"
 
-CONTROL_PIPE=$SHM_DIR/control.fifo
-PID_PIPE=$SHM_DIR/pid.fifo
-LOCKFILE=$SHM_DIR/musicman.lock
-VOLFILE=$SHM_DIR/vol
-TIMEFILE=$SHM_DIR/time
-MAXTIMEFILE=$SHM_DIR/maxtime
-NAMEFILE=$SHM_DIR/name
-ARTISTFILE=$SHM_DIR/artist
-ARLBUMFILE=$SHM_DIR/album
-FILEPATHFILE="$SHM_DIR"/file_path
+CONTROL_PIPE="$SHM_DIR"/control.fifo
+PID_PIPE="$SHM_DIR"/pid.fifo
+LOCKFILE="$SHM_DIR"/musicman.lock
+QUEUEFILE="$SHM_DIR"/queue
+VOLFILE="$SHM_DIR"/vol
+TIMEFILE="$SHM_DIR"/time
+MAXTIMEFILE="$SHM_DIR"/maxtime
+NAMEFILE="$SHM_DIR"/name
+ARTISTFILE="$SHM_DIR"/artist
+ARLBUMFILE="$SHM_DIR"/album
+FILEPATHFILE=""$SHM_DIR""/file_path
 
 
 export MUSICDIR=~/Music
 
-SHM_VOL="/dev/shm/musicman/vol"
-SHM_TIME="/dev/shm/musicman/time"
-SHM_NAME="/dev/shm/musicman/name"
 tmpfile="${MM_HOME}/tmpfile"
 
 mkdir -p "$MM_HOME"
-mkdir -p $SHM_DIR
+mkdir -p "$SHM_DIR"
 # ==============================================================================
 
 
@@ -163,9 +161,9 @@ play() {
 }
 
 set_queue() {
-	> $SHM_DIR/queue
+	> "$QUEUEFILE"
 	for i in "$@"; do
-		echo "$i" >> $SHM_DIR/queue
+		echo "$i" >> "$QUEUEFILE"
 	done
 	# empty the queue and refill
 }
@@ -185,13 +183,54 @@ enqueue() {
 	# set the time index
 	# kill some process on your way 
 	# play the song 
-	# this is pritty self explantory
-	current_track=$(head -n $queue_index "$SHM_DIR/queue" | tail -n 1)
+	# this is pritty self explanetory
+	current_track=$(head -n $queue_index "$QUEUEFILE" | tail -n 1)
 	export_data
 	time_index=0
 	kill -9 $player_pid &>/dev/null
 	play &> /dev/null
 }
+
+
+next() {
+	# increment the index 
+	# wc -l gives the max number of lines in the queue file 
+	# and we play it if the inex is valid
+	((queue_index >= $(wc -l < "$QUEUEFILE"))) && {
+		kill -9 $player_pid &>/dev/null
+		return
+	}
+
+	((queue_index++))
+	current_track=$(head -n $queue_index "$QUEUEFILE" | tail -n 1)
+	export_data
+	time_index=0
+	kill -9 $player_pid &>/dev/null
+	play &> /dev/null
+}
+
+
+previous () {
+	# increment the index 
+	# wc -l gives the max number of lines in the queue file 
+	# and we play it if the inex is valid
+	time_index=0
+	(($(<"$TIMEFILE")>30)) && {
+		kill -9 $player_pid &>/dev/null
+		play &> /dev/null
+		return
+	}
+
+	((queue_index--))
+	((queue_index < 1)) &&
+		queue_index=1
+
+	current_track=$(head -n $queue_index "$QUEUEFILE" | tail -n 1)
+	export_data
+	kill -9 $player_pid &>/dev/null
+	play &> /dev/null
+}
+
 
 # this is duplicate logic that exists in the tui too 
 # for now i think this is fine but we might have to do something about it later
@@ -301,16 +340,8 @@ read_state
 				[[ -n $player_pid ]] && kill -9 $player_pid &> /dev/null
 				play &> /dev/null
 				;;
-			"next")
-				# same as above too 
-				# it just works with $current_track insted of $time_index
-				((queue_index++))
-				current_track=$(head -n $queue_index "$SHM_DIR/queue" | tail -n 1)
-				export_data
-				time_index=0
-				kill -9 $player_pid &>/dev/null
-				play &> /dev/null
-				;;
+			"next") next ;;
+			"prev") previous ;;
 			"kill")
 				# KILL !
 				rm $LOCKFILE

@@ -794,6 +794,7 @@ key() {
 			echo "$VOL_BAR"
 			;;
 		$'\e5') musicman-daemon next ;;
+		$'\e4') musicman-daemon prev ;;
 		$'\ed'|'D') musicman-daemon forward ;;
 		$'\ea'|'A') musicman-daemon backward ;;
 
