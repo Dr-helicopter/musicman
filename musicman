@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-#!/usr/bin/env bash
-#!/usr/bin/env bash
-#!/usr/bin/env bash
 # MusicMan
 # by dr.helicopter
 # 2026/04/28
@@ -12,7 +9,7 @@
 : ${MUSICDIR:=~/Music}
 : ${IMGVIEWR:='swayimg'}
 MM_HOME="${XDG_STATE_HOME:-$HOME/.local/state}/muicman"
-mkdir $MM_HOME
+mkdir -p $MM_HOME
 
 SHM_DIR=/dev/shm/musicman
 VOLFILE=$SHM_DIR/vol
@@ -46,6 +43,10 @@ cursor_item=0
 t0cursor_item=0
 t1cursor_item=0
 t2cursor_item=0
+scroll=0
+t0scroll=0
+t1scroll=0
+t2scroll=0
 in_cmd=0
 # ==============================================================================
 
@@ -62,7 +63,9 @@ TITLE='${TITLE}'
 ALBUM='${ALBUM}'
 TRACK='${TRACK}'
 " > "$TMPFILE"
+	reset_terminal
 	"${EDITOR:=vi}" "$TMPFILE"
+	setup_terminal
 }
 
 change_album_order() {
@@ -75,13 +78,15 @@ change_album_order() {
 			printf '%s\t%s\n' "${TRACK}" "${i#$MUSICDIR/${1}/${2}/}"
 		done
 	)
+	reset_terminal
 	"${EDITOR:=vi}" "$TMPFILE"
+	setup_terminal
 
 	while IFS= read -r line; do
-		# Skip blank lines
+		# skip blank lines
 		[ -z "$line" ] && continue
 
-		# Skip comments
+		# skip comments
 		case "$line" in
 			\#*) continue ;;
 		esac
@@ -98,7 +103,6 @@ change_album_order() {
 
 
 open_song_editor() {
-	echo in ose
 	editor_song_meta "$1"
 	source "$TMPFILE"
 	echo $ALBUM
@@ -211,7 +215,8 @@ handle_cover_art() {
 	fi
 
 	# exit if the covers match
-	diff -q "$album_dir"/cover.jpg "$tmp_cover" &>/dev/null && { rm -f "$tmp_cover"; return 0; }
+	diff -q "$album_dir"/cover.jpg "$tmp_cover" &>/dev/null && 
+		{ rm -f "$tmp_cover"; return 0; }
 
 	# ask user if the covers conflict
 	while :; do
@@ -281,9 +286,10 @@ _add_song() {
 
 	mkdir -p "$album_dir"
 
-	[[ -f "$album_dir"/cover.jpg ]] && img_input=(-i "$album_dir"/cover.jpg -c:v mjpeg -map 1:v)
+	[[ -f "$album_dir"/cover.jpg ]] && 
+		img_input=(-i "$album_dir"/cover.jpg -c:v mjpeg -map 1:v)
 
-	echo $file_path
+	echo $ARTIST $ALBUM $TRACK $TITLE
 	ffmpeg -v quiet -y -i "$1" "${img_input[@]}" \
 		-map_metadata -1 \
 		-map_metadata:s:a -1 \
@@ -324,13 +330,36 @@ get_vars() {
 get_terminal_size() {
 #    read -r LINES COLUMNS < <(stty size)
 	get_vars $(stty size)
-	((max_items=tLINES - 8))
+	((max_line=tLINES - 8))
 }
 
 
 clear_screan() {
 	printf '\e[%sH\e[1J' $tLINES
 }
+
+# lifted directly out of fff
+setup_terminal() {
+    # Setup the terminal for the TUI.
+    # '\e[?1049h': Use alternative screen buffer.
+    # '\e[?7l':    Disable line wrapping.
+    # '\e[2J':     Clear the screen.
+    # '\e[1;Nr':   Limit scrolling to scrolling area.
+    #              Also sets cursor to (0,0).
+    printf '\e[?1049h\e[?7l\e[2J\e[1;%sr' "$max_items"
+}
+
+reset_terminal() {
+    # Reset the terminal to a useable state (undo all changes).
+    # '\e[?7h':   Re-enable line wrapping.
+    # '\e[2J':    Clear the terminal.
+    # '\e[;r':    Set the scroll region to its default value.
+    #             Also sets cursor to (0,0).
+    # '\e[?1049l: Restore main screen buffer.
+    printf '\e[?7h\e[2J\e[;r\e[?1049l'
+}
+
+
 
 
 resized() {
@@ -372,15 +401,16 @@ print_line() {
 		unset color_code
 	fi
 
-	printf "\e[$(($1+cmd_position+1))H${color_code}%3d    %s\n\e[m" \
+	printf "\e[$(($1+cmd_position+1-scroll))H${color_code}%3d    %s\e[m\e[K\r" \
 		$(($1+1)) "${display_list[$1]}"
 }
 
 display_update() {
 	printf '\e[7H'
-	for i in $(seq 0 $(($max_items < "${#display_list[@]}"-1 ? $max_items : "${#display_list[@]}"-1)) )
+	for i in $(seq 0 $(($max_line < "${#display_list[@]}"-1 ? \
+		$max_line : "${#display_list[@]}"-1)) )
 	do
-		print_line $i
+		print_line $((i+scroll))
 	done
 	printf '\e[6H'
 }
@@ -399,7 +429,7 @@ print_page() {
 			;;
 		2) 
 			display_list=("${song_display_list[@]}")
-			#display_list=("${display_list[@]%.mp3}")
+			display_list=("${display_list[@]%.mp3}")
 			display_update
 			;;
 
@@ -433,18 +463,16 @@ update_title_bar() {
 	local len="${#MM_TITLE}"
 	local spaces=$(( (tCOLUMNS-len) / 2 ))
 	
-	TITLE_BAR=$(printf "\
-\e[${title_bar_position}H\
-$code0%*s%s%*s" \
-"$spaces" "" "$MM_TITLE" $((tCOLUMNS-spaces-len)) "")
+	TITLE_BAR=$(printf "\e[%sH${code0}%*s%s%*s" \
+		"$title_bar_position" "$spaces" "" "$MM_TITLE" $((tCOLUMNS-spaces-len)) ""
+	)
 }
 
 update_song_bar() {
 	local code0="\e[${MM_SONG_FG:=34};${MM_SONG_BG:=40}m"
-	SONG_BAR=$(printf "\
-\e[${song_bar_position}H\
-${code0}%*s\r%s" \
-"$tCOLUMNS" "" "$display_format")
+
+	SONG_BAR=$(printf "\e[%sH${code0}%*s\r%s" \
+		"$song_bar_position" "$tCOLUMNS" "" "$display_format")
 }
 
 update_vol_bar() {
@@ -452,11 +480,8 @@ update_vol_bar() {
 	local code3="\e[${fg3:=37};${bg3:=42}m"
 	local filled=$(($tCOLUMNS*${volume:-50}/130))
 
-	VOL_BAR=$( printf "\
-\e[${vol_bar_position}H\
-$code2%*s\r$code3%*s\r ${volume}\
-\e[m" \
-"$(($tCOLUMNS))" '|' "$filled" '|')
+	VOL_BAR=$( printf "\e[%sH$code2%*s\r$code3%*s\r %s\e[m" \
+		"$vol_bar_position" "$(($tCOLUMNS))" '|' "$filled" '|' "$volume")
 }
 
 update_time_bar() {
@@ -487,43 +512,71 @@ song_status_check() {
 # ==============================================================================
 
 cursor_up() {
-	if ((cursor_item > 0)); then
-		((cursor_item--)) 
+	((cursor_item <= 0)) && return
+
+	((cursor_item--)) 
+	((cursor_item<scroll)) &&
+		((scroll--))
+
+	if ((scroll==cursor_item)); then
+		((scroll==0)) && {
+			print_line $cursor_item
+			print_line $(($cursor_item+1))
+			return
+		}
+		printf '\e[L'
+		print_line $cursor_item
+		print_line $(($cursor_item+2))
+		print_line $(($cursor_item+1))
+	else
 		print_line $cursor_item
 		print_line $(($cursor_item+1))
 	fi
 	case $TAB in
 		0)
 			t0cursor_item=$cursor_item
+			t0scroll=$scroll
 			;;
 		1)
 			t1cursor_item=$cursor_item
+			t1scroll=$scroll
 			;;
 		2)
 			t2cursor_item=$cursor_item
+			t2scroll=$scroll
 			;;
 		*)
 			exit 40
 			;;
 	esac
-	printf "\e[$cmd_positionH"
 }
 
 cursor_down() {
-	if ((cursor_item < ${#display_list[@]}-1)); then
-		((cursor_item++)) 
-		print_line $cursor_item
-		print_line $(($cursor_item-1))
-	fi
+	local max_items=$((${#display_list[@]}-1))
+	((cursor_item >= max_items)) && return
+
+
+	((cursor_item++)) 
+	print_line $(($cursor_item-1))
+	((cursor_item>max_line+scroll)) &&
+		((scroll++))
+	printf '\n\n'
+	print_line $cursor_item
+	echo "$TITLE_BAR$SONG_BAR$TIME_BAR$VOL_BAR$TAB_BAR"
+
+
 	case $TAB in
 		0)
 			t0cursor_item=$cursor_item
+			t0scroll=$scroll
 			;;
 		1)
 			t1cursor_item=$cursor_item
+			t1scroll=$scroll
 			;;
 		2)
 			t2cursor_item=$cursor_item
+			t2scroll=$scroll
 			;;
 		*)
 			exit 40
@@ -537,13 +590,16 @@ go_tab() {
 		'+') go_tab $(($TAB+1)) && return 0 ;;
 		'-') go_tab $(($TAB-1)) && return 0 ;;
 		0)
-			((cursor_item=$t0cursor_item))
+			cursor_item=$t0cursor_item
+			scroll=$t0scroll
 			;;
 		1)
-			((cursor_item=$t1cursor_item))
+			cursor_item=$t1cursor_item
+			scroll=$t1scroll
 			;;
 		2)
-			((cursor_item=$t2cursor_item))
+			cursor_item=$t2cursor_item
+			scroll=$t2scroll
 			;;
 		*) ;;
 	esac
@@ -562,12 +618,14 @@ select_item() {
 			album_list=( "${artist_list[$1]}"/* )
 			album_display_list=("${album_list[@]##*/}")
 			t1cursor_item=0 
+			t1scroll=0 
 			go_tab 1
 			;;
 		1)
 			song_list=( "${album_list[$1]}"/*.mp3 )
 			song_display_list=( "${song_list[@]##*/*:}" )
 			t2cursor_item=0
+			t2scroll=0 
 			go_tab 2
 			;;
 		2)
@@ -584,6 +642,7 @@ select_all() {
 		0)
 			read_albums
 			t1cursor_item=0 
+			t1scroll=0 
 			go_tab 1
 			;;
 		1)
@@ -595,6 +654,7 @@ select_all() {
 			song_display_list=( "${song_list[@]#$MUSICDIR/}" )
 			song_display_list=("${song_display_list[@]/\/*:/ - }")
 			t2cursor_item=0
+			t2scroll=0 
 			go_tab 2
 			;;
 		2)
@@ -705,7 +765,7 @@ key() {
 			;;
 		w) 
 			cursor_up
-			printf "\e[${cmd_position}H"
+			printf "\e[${cmd_position}H\r\e[K%s" ''
 			;;
 		e|$'\e ') 
 			select_item $cursor_item
@@ -753,7 +813,7 @@ tui() {
 
 
 	get_terminal_size
-	clear_screan
+	setup_terminal
 	read_artists
 	read_albums
 	read_songs
@@ -778,6 +838,7 @@ tui() {
 		echo "$VOL_BAR"
 		echo "$TAB_BAR"
 	done
+	reset_terminal
 }
 # ==============================================================================
 
