@@ -110,11 +110,11 @@ open_song_editor() {
 }
 
 format_prefix_number() {
-    [[ "$1" =~ ^[0-9]+$ ]] &&
-        printf "%02d" "$1" ||
+	# the 10# stops the string from being interpreted as octal if it starts with 0
+    [[ $1 =~ ^[0-9]+$ ]] &&
+        printf "%02d" "$((10#$1))" ||
         echo "xx"
 }
-
 
 format_album_dir() {
 	# we use substitution here to replace all instances of / with the unicode ∕
@@ -340,23 +340,23 @@ clear_screan() {
 
 # lifted directly out of fff
 setup_terminal() {
-    # Setup the terminal for the TUI.
-    # '\e[?1049h': Use alternative screen buffer.
-    # '\e[?7l':    Disable line wrapping.
-    # '\e[2J':     Clear the screen.
-    # '\e[1;Nr':   Limit scrolling to scrolling area.
-    #              Also sets cursor to (0,0).
-    printf '\e[?1049h\e[?7l\e[2J\e[1;%sr' "$max_items"
+	# Setup the terminal for the TUI.
+	# '\e[?1049h': Use alternative screen buffer.
+	# '\e[?7l':    Disable line wrapping.
+	# '\e[2J':     Clear the screen.
+	# '\e[1;Nr':   Limit scrolling to scrolling area.
+	#              Also sets cursor to (0,0).
+	printf '\e[?1049h\e[?7l\e[2J\e[1;%sr' "$max_items"
 }
 
 reset_terminal() {
-    # Reset the terminal to a useable state (undo all changes).
-    # '\e[?7h':   Re-enable line wrapping.
-    # '\e[2J':    Clear the terminal.
-    # '\e[;r':    Set the scroll region to its default value.
-    #             Also sets cursor to (0,0).
-    # '\e[?1049l: Restore main screen buffer.
-    printf '\e[?7h\e[2J\e[;r\e[?1049l'
+	# Reset the terminal to a useable state (undo all changes).
+	# '\e[?7h':   Re-enable line wrapping.
+	# '\e[2J':    Clear the terminal.
+	# '\e[;r':    Set the scroll region to its default value.
+	#             Also sets cursor to (0,0).
+	# '\e[?1049l: Restore main screen buffer.
+	printf '\e[?7h\e[2J\e[;r\e[?1049l'
 }
 
 
