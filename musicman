@@ -58,14 +58,12 @@ editor_song_meta() {
 # file ${1}
 # edit the vars as you please
 
-ARTIST='${ARTIST}'
-TITLE='${TITLE}'
-ALBUM='${ALBUM}'
+ARTIST='"${ARTIST:-$fallback_artist}"'
+TITLE='${TITLE:-$(basename "$1")}'
+ALBUM='"${ALBUM:-$fallback_album}"'
 TRACK='${TRACK}'
 " > "$TMPFILE"
-	reset_terminal
 	"${EDITOR:=vi}" "$TMPFILE"
-	setup_terminal
 }
 
 change_album_order() {
@@ -96,7 +94,7 @@ change_album_order() {
 
 		if [[ -f "$filename" ]]; then
 			get_tags "$filename"
-			change_track_no "$ARTIST" "$ALBUM" "$TITLE" "$number"
+			change_track_no "$ARTIST" "$ALBUM" "$TRACK" "$TITLE" "$number"
 		fi
 	done < "$TMPFILE"
 }
@@ -105,7 +103,6 @@ change_album_order() {
 open_song_editor() {
 	editor_song_meta "$1"
 	source "$TMPFILE"
-	echo $ALBUM
 	> "$TMPFILE"
 }
 
@@ -125,12 +122,18 @@ format_album_dir() {
 	echo "$MUSICDIR/$artist/$album"
 }
 
+format_file_name() {
+	# takes track as $1 and title as $2
+	echo $2 > asd
+	echo $(format_prefix_number "$1")":${2////∕}.mp3"
+}
+
 
 get_tags() {
 	[[ ! -f "$1" ]] && return 1
 
-    ARTIST="" TITLE="" ALBUM="" TRACK="" YEAR="" LYRICS=""
 
+	ARTIST='' TITLE='' ALBUM='' YEAR='' TRACK=''
 
 	while IFS='=' read -r key value; do
         case "$key" in
@@ -144,7 +147,6 @@ get_tags() {
 		format_tags=artist,title,album,track,date \
         -of default=noprint_wrappers=1:nokey=0 "$1")
 
-	return 0
 
     [[ -z "$ARTIST" || -z "$ALBUM" || -z "$TITLE" ]] && return 2
 }
@@ -153,7 +155,7 @@ get_tags() {
 set_song_meta() {
 	[[ ! -f "$1" ]] && { echo "file $1 not found"; return 1; }
 
-	local tmp_out="/tmp/${1}.tmp.mp3"
+	local tmp_out="/tmp/tmp.mp3"
 	local album_dir="${1%/*}"
 	local album_cover="$album_dir/cover.jpg"
 	local img_input=()
@@ -246,27 +248,54 @@ handle_cover_art() {
 }
 
 change_track_no() {
-	local album_dir="$MUSICDIR/${1////∕}/${2////∕}"
-	! ( ls "$album_dir" | grep -E "^..:$3.mp3$" &> /tmp/mmfnm ) &&
+	local album_dir=$(format_album_dir "$1" "$2")
+	local filename=$(format_file_name "$3" "$4")
+
+	local file_path="$album_dir/$filename"
+	[[ ! -f "$file_path" ]] && {
+		echo file $file_path doesnt exist
 		return 1
+	}
 
-
-	local file_path="$album_dir/$(head -n 1 /tmp/mmfnm)"
 
 	# get tags else return 
-	get_tags "$file_name" || 
+	! get_tags "$file_path" || 
 		return $?
 
-	TRACK="$4"
+	TRACK="$5"
 
 
-	local new_file_name="$album_dir/$(format_number $TRACK):$TITLE".mp3
+	local new_file_name="$album_dir/$(format_file_name "$TRACK" "$TITLE")"
 	mv "$file_path" "$new_file_name"
 
 	set_song_meta "$new_file_name" "$ARTIST" "$ALBUM" "$TRACK" "$TITLE" "$YEAR"
 }
 
 
+change_track_title() {
+	# takes artist, album, track, title and new title as $[1-5]
+	local album_dir=$(format_album_dir "$1" "$2")
+	local filename=$(format_file_name "$3" "$4")
+
+	local file_path="$album_dir/$filename"
+	[[ ! -f "$file_path" ]] && {
+		echo file $file_path doesnt exist
+		return 1
+	}
+
+	
+	# get tags else return 
+	! get_tags "$file_path" || 
+		return $?
+
+	TITLE="$5"
+
+
+	local new_file_name="$album_dir/$(format_file_name "$TRACK" "$TITLE")"
+	mv "$file_path" "$new_file_name"
+
+	set_song_meta "$new_file_name" "$ARTIST" "$ALBUM" "$TRACK" "$TITLE" "$YEAR"
+}
 
 
 _add_song() {
@@ -279,7 +308,8 @@ _add_song() {
 	handle_cover_art "$1"
 
 	local album_dir=$(format_album_dir "$ARTIST" "$ALBUM")
-	local file_name="$(format_prefix_number ${TRACK}):${TITLE////∕}.mp3"
+	local file_track=$(format_prefix_number "$TRACK")
+	local file_name="$file_track:${TITLE////∕}.mp3"
 	local file_path="$album_dir/$file_name"
 
 	local img_input=()
@@ -290,25 +320,49 @@ _add_song() {
 		img_input=(-i "$album_dir"/cover.jpg -c:v mjpeg -map 1:v)
 
 	echo $ARTIST $ALBUM $TRACK $TITLE
-	ffmpeg -v quiet -y -i "$1" "${img_input[@]}" \
+	ffmpeg  -y -i "$1" "${img_input[@]}" \
 		-map_metadata -1 \
 		-map_metadata:s:a -1 \
 		-c:a copy -map 0:a \
 		-metadata artist="$ARTIST" \
 		-metadata album="$ALBUM" \
-		-metadata track="$(format_prefix_number $TRACK)" \
+		-metadata track="$file_track" \
 		-metadata title="$TITLE" \
 		-metadata date="$YEAR" \
 		-id3v2_version 3 \
-		"$file_path"
+		"$file_path" \
+		-v quiet || 
+	ffmpeg -y -i "$1" "${img_input[@]}" \
+        -map_metadata -1 \
+        -map_metadata:s:a -1 \
+		-c:a libmp3lame -q:a 2 -map 0:a \
+        -metadata artist="$ARTIST" \
+        -metadata album="$ALBUM" \
+        -metadata track="$file_track" \
+        -metadata title="$TITLE" \
+        -metadata date="$YEAR" \
+        -id3v2_version 3 \
+        "$file_path" #-v quiet
 }
 
 add_song() {
 	args=("$@")
 	for i in $(seq "${#args[@]}"); do 
-		[[ "${args[$i]}" = "-e" ]] && 
-			unset "args[$i]" && 
-			eflag='-e' 
+		case "${args[$i]}" in
+			"-e") 
+				unset "args[$i]" 
+				eflag='-e' 
+			;;
+			-AR=*)
+				fallback_artist="${args[$i]#-AR=}"
+				unset "args[$i]"
+			;;
+			-AL=*)
+				fallback_album="${args[$i]#-AL=}"
+				unset "args[$i]"
+			;;
+
+		esac
 	done
 	set -- "${args[@]}"
 
@@ -732,7 +786,7 @@ open_cmd(){
 				*)
 					if [[ $mode = 'num' && $char =~ ^[0-9]$ ]]; then
 						local cmd_line=$cmd_line$char
-					elif [[ $char =~ ^([0-9]|[a-z]|[A-Z]|' ')$ ]]; then
+					elif [[ $char != *[^[:print:]]* ]]; then
 						local cmd_line=$cmd_line$char
 					fi
 					;;
@@ -757,10 +811,10 @@ run_command() {
 
 				change_album_order "$art" "$alb"
 			elif [[ $TAB == 2 ]]; then
-				Get_tags "${song_list[$cursor_item]}"
+				get_tags "${song_list[$cursor_item]}"
 				open_cmd -n 'give number '
 				if [[ "$last_cmd_reply" =~ ^[0-9]+$ ]]; then
-					change_track_no "$ARTIST" "$ALBUM" "$TITLE" "$last_cmd_reply"
+					change_track_no "$ARTIST" "$ALBUM" "$TRACK" "$TITLE" "$last_cmd_reply"
 				else
 					printf "\e[${cmd_position}H%s " "not a number"
 					read -sn 1 nul
@@ -770,7 +824,17 @@ run_command() {
 				read -sn 1 nul
 			fi
 			;;
-		*) true ;;
+		"chg ti")
+			if [[ $TAB == 2 ]]; then
+				get_tags "${song_list[$cursor_item]}"
+				open_cmd -n 'new title: '
+				change_track_title "$ARTIST" "$ALBUM" "$TRACK" "$TITLE" "$last_cmd_reply"
+			else
+				printf "\e[${cmd_position}H%s " "no song is selected"
+				read -sn 1 nul
+			fi
+			;;
+		*) : ;;
 	esac
 }
 
