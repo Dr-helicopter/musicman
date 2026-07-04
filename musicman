@@ -492,7 +492,38 @@ update_time_bar() {
 	time_bar_filled=$(($tCOLUMNS*$time/$maxtime))
 
 	TIME_BAR=$( printf "\e[%sH$code2%*s\r$code1%*s\r ${time}\e[m" \
-	"$time_bar_position" "$(($tCOLUMNS))" '|' "$time_bar_filled" '|')
+		"$time_bar_position" "$(($tCOLUMNS))" '|' "$time_bar_filled" '|')
+}
+
+format_time() {
+    printf "%d:%02d" $(($1 / 60)) $(($1 % 60))
+}
+
+update_time_bar() {
+    [[ -f $TIMEFILE ]] && time=$(<"$TIMEFILE")
+    [[ -z $time ]] && return
+
+	local min=$((time / 60))
+	local sec=$((time % 60))
+	printf -v t '%d:%02d' "$min" "$sec"
+    local filled=$((tCOLUMNS * time / maxtime))
+    local pos=$(((tCOLUMNS - ${#t}) / 2))
+
+    # build plain bar
+    local bar
+    printf -v bar '%*s' "$tCOLUMNS" '|'
+
+    # inject time
+    bar="${bar:0:pos}${t}${bar:pos+${#t}}"
+
+    # split at fill boundary
+    local left="${bar:0:filled}"
+    local right="${bar:filled}"
+
+    TIME_BAR=$(printf '\e[%sH\e[%s;%sm%s\e[%s;%sm%s\e[m' \
+        "$time_bar_position" \
+        "${fg3:-37}" "${MM_SEEKBAR_FILED_BG:-44}" "$left" \
+        "${fg2:-34}" "${MM_SEEKBAR_EMPTY_BG:-40}" "$right")
 }
 
 
