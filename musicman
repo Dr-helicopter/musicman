@@ -148,7 +148,10 @@ get_tags() {
         -of default=noprint_wrappers=1:nokey=0 "$1")
 
 
-    [[ -z "$ARTIST" || -z "$ALBUM" || -z "$TITLE" ]] && return 2
+	[[ -z "$ARTIST" || -z "$ALBUM" || -z "$TITLE" ]] && return 2
+	# if the above fails its gonna be last command
+	# and the return value will be 1 (stupid ass language)
+	return 0 
 }
 
 
