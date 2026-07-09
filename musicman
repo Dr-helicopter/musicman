@@ -147,7 +147,6 @@ get_tags() {
 		format_tags=artist,title,album,track,date \
         -of default=noprint_wrappers=1:nokey=0 "$1")
 
-
 	[[ -z "$ARTIST" || -z "$ALBUM" || -z "$TITLE" ]] && return 2
 	# if the above fails its gonna be last command
 	# and the return value will be 1 (stupid ass language)
@@ -156,6 +155,8 @@ get_tags() {
 
 
 set_song_meta() {
+	# takes file name as $1
+	# and artist, album, track, title, date as $[2-6]
 	[[ ! -f "$1" ]] && { echo "file $1 not found"; return 1; }
 
 	local tmp_out="/tmp/tmp.mp3"
@@ -250,6 +251,7 @@ handle_cover_art() {
 	done
 }
 
+
 change_track_no() {
 	local album_dir=$(format_album_dir "$1" "$2")
 	local filename=$(format_file_name "$3" "$4")
@@ -262,7 +264,7 @@ change_track_no() {
 
 
 	# get tags else return 
-	! get_tags "$file_path" || 
+	get_tags "$file_path" || 
 		return $?
 
 	TRACK="$5"
@@ -288,7 +290,7 @@ change_track_title() {
 
 	
 	# get tags else return 
-	! get_tags "$file_path" || 
+	get_tags "$file_path" || 
 		return $?
 
 	TITLE="$5"
@@ -299,7 +301,6 @@ change_track_title() {
 
 	set_song_meta "$new_file_name" "$ARTIST" "$ALBUM" "$TRACK" "$TITLE" "$YEAR"
 }
-
 
 _add_song() {
 	! get_tags "$1" && {
@@ -552,10 +553,6 @@ update_time_bar() {
 		"$time_bar_position" "$(($tCOLUMNS))" '|' "$time_bar_filled" '|')
 }
 
-format_time() {
-    printf "%d:%02d" $(($1 / 60)) $(($1 % 60))
-}
-
 update_time_bar() {
     [[ -f $TIMEFILE ]] && time=$(<"$TIMEFILE")
     [[ -z $time ]] && return
@@ -787,9 +784,9 @@ open_cmd(){
 					return 0
 					;;
 				*)
-					if [[ $mode = 'num' && $char =~ ^[0-9]$ ]]; then
+					if [[ $mode == 'num' && $char =~ ^[0-9]$ ]]; then
 						local cmd_line=$cmd_line$char
-					elif [[ $char != *[^[:print:]]* ]]; then
+					elif [[ $char != *[^[:print:]]* || mode != num ]]; then
 						local cmd_line=$cmd_line$char
 					fi
 					;;
@@ -798,6 +795,35 @@ open_cmd(){
 		}
         [[ -t 1 ]] || exit 1
 	}
+}
+
+command_change_title() {
+	if [[ $TAB == 2 ]]; then
+		get_tags "${song_list[$cursor_item]}"
+		open_cmd 'new title: '
+		change_track_title "$ARTIST" "$ALBUM" "$TRACK" "$TITLE" "$last_cmd_reply"
+	elif [[ $TAB == 1 ]]; then
+		open_cmd 'new title: '
+		for i in "${album_list[$cursor_item]}"/*.mp3; do
+			get_tags "$i" || 
+				return $?
+
+			set_song_meta "$i" "$ARTIST" "$last_cmd_reply" "$TRACK" "$TITLE" "$YEAR"
+		done
+
+		local artist_dir="${album_list[$cursor_item]%/*}"
+
+		if [[ -d "$artist_dir/$last_cmd_reply" ]]; then
+			mv "${album_list[$cursor_item]}"/* "$artist_dir/$last_cmd_reply"
+			rm -rf "${album_list[$cursor_item]}"
+		else 
+			mv "${album_list[$cursor_item]}" "$artist_dir/$last_cmd_reply/"
+		fi
+
+	else
+		printf "\e[${cmd_position}H%s " "no song is selected"
+		read -sn 1 nul
+	fi
 }
 
 run_command() {
@@ -827,16 +853,7 @@ run_command() {
 				read -sn 1 nul
 			fi
 			;;
-		"chg ti")
-			if [[ $TAB == 2 ]]; then
-				get_tags "${song_list[$cursor_item]}"
-				open_cmd -n 'new title: '
-				change_track_title "$ARTIST" "$ALBUM" "$TRACK" "$TITLE" "$last_cmd_reply"
-			else
-				printf "\e[${cmd_position}H%s " "no song is selected"
-				read -sn 1 nul
-			fi
-			;;
+		"chg ti") command_change_title ;;
 		*) : ;;
 	esac
 }
