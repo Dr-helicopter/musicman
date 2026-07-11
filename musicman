@@ -708,7 +708,7 @@ select_item() {
 			;;
 		1)
 			song_list=( "${album_list[$1]}"/*.mp3 )
-			song_display_list=( "${song_list[@]##*/*:}" )
+			song_display_list=( "${song_list[@]#*/*:}" )
 			t2cursor_item=0
 			t2scroll=0 
 			go_tab 2
