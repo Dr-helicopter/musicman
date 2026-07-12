@@ -18,7 +18,7 @@ TIMEFILE="$SHM_DIR"/time
 MAXTIMEFILE="$SHM_DIR"/maxtime
 NAMEFILE="$SHM_DIR"/name
 ARTISTFILE="$SHM_DIR"/artist
-ARLBUMFILE="$SHM_DIR"/album
+ALBUMFILE="$SHM_DIR"/album
 FILEPATHFILE=""$SHM_DIR""/file_path
 
 
@@ -106,14 +106,15 @@ play() {
 		{
 			# multiply the vol by vol
 			v = int($1 * vol)
-			if (v < 0) v += 65536
+
+	 		if (v < 0) v += 65536
 
 			# handle the heigh and low byte
 			printf("%c%c", v % 256, int(v / 256))
 
 			if (NR % 4000 == 1) {
 				if ((getline < vol_file) > 0) {
-					vol = $0 / 100
+					vol = $0 ^ 2 / 10000
 				}
 				close(vol_file)
 			}
@@ -256,7 +257,7 @@ export_data() {
 	get_tags "$current_track"
 	echo $TITLE > $NAMEFILE
 	echo $ARTIST> $ARTISTFILE
-	echo $ALBUM> $ARLBUMFILE
+	echo $ALBUM> $ALBUMFILE
 	maxtime=$(ffprobe -v error -show_entries format=duration -of\
 		default=noprint_wrappers=1:nokey=1 "$current_track")
 	echo "${maxtime%.*}" > $MAXTIMEFILE
