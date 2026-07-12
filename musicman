@@ -597,23 +597,14 @@ cursor_up() {
 	((cursor_item <= 0)) && return
 
 	((cursor_item--)) 
-	((cursor_item<scroll)) &&
+	if ((cursor_item<scroll)); then
 		((scroll--))
-
-	if ((scroll==cursor_item)); then
-		((scroll==0)) && {
-			print_line $cursor_item
-			print_line $(($cursor_item+1))
-			return
-		}
 		printf '\e[L'
-		print_line $cursor_item
-		print_line $(($cursor_item+2))
-		print_line $(($cursor_item+1))
-	else
-		print_line $cursor_item
-		print_line $(($cursor_item+1))
 	fi
+
+	print_line $cursor_item
+	print_line $(($cursor_item+1))
+
 	case $TAB in
 		0)
 			t0cursor_item=$cursor_item
