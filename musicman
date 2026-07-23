@@ -106,9 +106,9 @@ open_song_editor() {
 
 format_prefix_number() {
 	# the 10# stops the string from being interpreted as octal if it starts with 0
-    [[ $1 =~ ^[0-9]+$ ]] &&
-        printf "%02d" "$((10#$1))" ||
-        echo "xx"
+	[[ $1 =~ ^[0-9]+$ ]] &&
+		printf "%02d" "$((10#$1))" ||
+		echo "xx"
 }
 
 format_album_dir() {
@@ -118,6 +118,14 @@ format_album_dir() {
 	local artist="${1////∕}"
 	local album="${2////∕}"
 	echo "$MUSICDIR/$artist/$album"
+}
+
+format_artist_dir() {
+	# we use substitution here to replace all instances of / with the unicode ∕
+	# to prevent extra nesting in the archive dir
+
+	local artist="${1////∕}"
+	echo "$MUSICDIR/$artist"
 }
 
 format_file_name() {
@@ -133,16 +141,16 @@ get_tags() {
 	ARTIST='' TITLE='' ALBUM='' YEAR='' TRACK=''
 
 	while IFS='=' read -r key value; do
-        case "$key" in
+		case "$key" in
 			"TAG:artist")	ARTIST=$value ;;
-            "TAG:title"	)	TITLE=$value ;;
-            "TAG:album"	)	ALBUM=$value ;;
-            "TAG:date"	)	YEAR=$value ;;
-            "TAG:track"	)	TRACK=${value%%/*} ;;
-        esac
+			"TAG:title"	)	TITLE=$value ;;
+			"TAG:album"	)	ALBUM=$value ;;
+			"TAG:date"	)	YEAR=$value ;;
+			"TAG:track"	)	TRACK=${value%%/*} ;;
+		esac
 	done < <(ffprobe -v quiet -show_entries \
 		format_tags=artist,title,album,track,date \
-        -of default=noprint_wrappers=1:nokey=0 "$1")
+			-of default=noprint_wrappers=1:nokey=0 "$1")
 
 	[[ -z "$ARTIST" || -z "$ALBUM" || -z "$TITLE" ]] && return 2
 	# if the above fails its gonna be last command
@@ -267,10 +275,10 @@ change_track_no() {
 	TRACK="$5"
 
 
-	local new_file_name="$album_dir/$(format_file_name "$TRACK" "$TITLE")"
-	mv "$file_path" "$new_file_name"
+	local new_file_path="$album_dir/$(format_file_name "$TRACK" "$TITLE")"
+	mv "$file_path" "$new_file_path"
 
-	set_song_meta "$new_file_name" "$ARTIST" "$ALBUM" "$TRACK" "$TITLE" "$YEAR"
+	set_song_meta "$new_file_path" "$ARTIST" "$ALBUM" "$TRACK" "$TITLE" "$YEAR"
 }
 
 
@@ -293,10 +301,38 @@ change_track_title() {
 	TITLE="$5"
 
 
-	local new_file_name="$album_dir/$(format_file_name "$TRACK" "$TITLE")"
-	mv "$file_path" "$new_file_name"
+	local new_file_path="$album_dir/$(format_file_name "$TRACK" "$TITLE")"
+	mv "$file_path" "$new_file_path"
 
-	set_song_meta "$new_file_name" "$ARTIST" "$ALBUM" "$TRACK" "$TITLE" "$YEAR"
+	set_song_meta "$new_file_path" "$ARTIST" "$ALBUM" "$TRACK" "$TITLE" "$YEAR"
+}
+
+change_track_artist() {
+	# takes artist, album, track, title and new artist as $[1-5]
+	local album_dir=$(format_album_dir "$1" "$2")
+	local filename=$(format_file_name "$3" "$4")
+
+	local file_path="$album_dir/$filename"
+	[[ ! -f "$file_path" ]] && {
+		echo file $file_path doesnt exist
+		return 1
+	}
+
+	
+	# get tags else return 
+	get_tags "$file_path" || 
+		return $?
+
+	ARTIST="$5"
+
+	local new_album_dir=$(format_album_dir "$ARTIST" "$ALBUM")
+	[[ ! -d "$new_album_dir" ]] && mkdir -p "$new_album_dir"
+
+	local new_file_path="$new_album_dir/$filename"
+
+	mv "$file_path" "$new_file_path"
+
+	set_song_meta "$new_file_path" "$ARTIST" "$ALBUM" "$TRACK" "$TITLE" "$YEAR"
 }
 
 _add_song() {
@@ -334,16 +370,16 @@ _add_song() {
 		"$file_path" \
 		-v quiet || 
 	ffmpeg -y -i "$1" "${img_input[@]}" \
-        -map_metadata -1 \
-        -map_metadata:s:a -1 \
+		-map_metadata -1 \
+		-map_metadata:s:a -1 \
 		-c:a libmp3lame -q:a 2 -map 0:a \
-        -metadata artist="$ARTIST" \
-        -metadata album="$ALBUM" \
-        -metadata track="$file_track" \
-        -metadata title="$TITLE" \
-        -metadata date="$YEAR" \
-        -id3v2_version 3 \
-        "$file_path" #-v quiet
+		-metadata artist="$ARTIST" \
+		-metadata album="$ALBUM" \
+		-metadata track="$file_track" \
+		-metadata title="$TITLE" \
+		-metadata date="$YEAR" \
+		-id3v2_version 3 \
+		"$file_path" #-v quiet
 }
 
 add_song() {
@@ -383,7 +419,7 @@ get_vars() {
 	tCOLUMNS=$(($2-1))
 }
 get_terminal_size() {
-#    read -r LINES COLUMNS < <(stty size)
+#	read -r LINES COLUMNS < <(stty size)
 	get_vars $(stty size)
 	((max_line=tLINES - 8))
 }
@@ -397,21 +433,23 @@ clear_screan() {
 setup_terminal() {
 	# Setup the terminal for the TUI.
 	# '\e[?1049h': Use alternative screen buffer.
-	# '\e[?7l':    Disable line wrapping.
-	# '\e[2J':     Clear the screen.
+	# '\e[?7l':	Disable line wrapping.
+	# '\e[?25l':   Hide the cursor.
+	# '\e[2J':	 Clear the screen.
 	# '\e[1;Nr':   Limit scrolling to scrolling area.
-	#              Also sets cursor to (0,0).
-	printf '\e[?1049h\e[?7l\e[2J\e[1;%sr' "$max_items"
+	#	          Also sets cursor to (0,0).
+	printf '\e[?1049h\e[?7l\e[?25l\e[2J\e[1;%sr' "$max_items"
 }
 
 reset_terminal() {
 	# Reset the terminal to a useable state (undo all changes).
 	# '\e[?7h':   Re-enable line wrapping.
-	# '\e[2J':    Clear the terminal.
-	# '\e[;r':    Set the scroll region to its default value.
-	#             Also sets cursor to (0,0).
+	# '\e[2J':	Clear the terminal.
+	# '\e[?25h':  Unhide the cursor.
+	# '\e[;r':	Set the scroll region to its default value.
+	#	         Also sets cursor to (0,0).
 	# '\e[?1049l: Restore main screen buffer.
-	printf '\e[?7h\e[2J\e[;r\e[?1049l'
+	printf '\e[?7h\e[?25h\e[2J\e[;r\e[?1049l'
 }
 
 
@@ -551,30 +589,30 @@ update_time_bar() {
 }
 
 update_time_bar() {
-    [[ -f $TIMEFILE ]] && time=$(<"$TIMEFILE")
-    [[ -z $time ]] && return
+	[[ -f $TIMEFILE ]] && time=$(<"$TIMEFILE")
+	[[ -z $time ]] && return
 
 	local min=$((time / 60))
 	local sec=$((time % 60))
 	printf -v t '%d:%02d' "$min" "$sec"
-    local filled=$((tCOLUMNS * time / maxtime))
-    local pos=$(((tCOLUMNS - ${#t}) / 2))
+	local filled=$((tCOLUMNS * time / maxtime))
+	local pos=$(((tCOLUMNS - ${#t}) / 2))
 
-    # build plain bar
-    local bar
-    printf -v bar '%*s' "$tCOLUMNS" '|'
+	# build plain bar
+	local bar
+	printf -v bar '%*s' "$tCOLUMNS" '|'
 
-    # inject time
-    bar="${bar:0:pos}${t}${bar:pos+${#t}}"
+	# inject time
+	bar="${bar:0:pos}${t}${bar:pos+${#t}}"
 
-    # split at fill boundary
-    local left="${bar:0:filled}"
-    local right="${bar:filled}"
+	# split at fill boundary
+	local left="${bar:0:filled}"
+	local right="${bar:filled}"
 
-    TIME_BAR=$(printf '\e[%sH\e[%s;%sm%s\e[%s;%sm%s\e[m' \
-        "$time_bar_position" \
-        "${fg3:-37}" "${MM_SEEKBAR_FILED_BG:-44}" "$left" \
-        "${fg2:-34}" "${MM_SEEKBAR_EMPTY_BG:-40}" "$right")
+	TIME_BAR=$(printf '\e[%sH\e[%s;%sm%s\e[%s;%sm%s\e[m' \
+		"$time_bar_position" \
+		"${fg3:-37}" "${MM_SEEKBAR_FILED_BG:-44}" "$left" \
+		"${fg2:-34}" "${MM_SEEKBAR_EMPTY_BG:-40}" "$right")
 }
 
 
@@ -746,9 +784,9 @@ open_cmd(){
 		shift
 	fi
 	for ((;;)); {
-		printf "\e[${cmd_position}H%s%s " "$1" "$cmd_line"
+		printf "\e[${cmd_position}H%s%s| " "$1" "$cmd_line"
 
-        read "${read_flags[@]}" -srn 1 && 
+		read "${read_flags[@]}" -srn 1 && 
 		{
 			char=$REPLY
 			[[ "$REPLY" == $'\e' ]] && {
@@ -781,86 +819,24 @@ open_cmd(){
 			esac
 			# very chaotic indeed
 		}
-        [[ -t 1 ]] || exit 1
+		[[ -t 1 ]] || exit 1
 	}
 }
 
-command_change_title() {
-	if [[ $TAB == 2 ]]; then
-		get_tags "${song_list[$cursor_item]}"
-		open_cmd 'new title: '
-		change_track_title "$ARTIST" "$ALBUM" "$TRACK" "$TITLE" "$last_cmd_reply"
-	elif [[ $TAB == 1 ]]; then
-		open_cmd 'new title: '
-		for i in "${album_list[$cursor_item]}"/*.mp3; do
-			get_tags "$i" || 
-				return $?
-
-			set_song_meta "$i" "$ARTIST" "$last_cmd_reply" "$TRACK" "$TITLE" "$YEAR"
-		done
-
-		local artist_dir="${album_list[$cursor_item]%/*}"
-
-		if [[ -d "$artist_dir/$last_cmd_reply" ]]; then
-			mv "${album_list[$cursor_item]}"/* "$artist_dir/$last_cmd_reply"
-			rm -rf "${album_list[$cursor_item]}"
-		else 
-			mv "${album_list[$cursor_item]}" "$artist_dir/$last_cmd_reply/"
-		fi
-
-	else
-		printf "\e[${cmd_position}H%s " "no song is selected"
-		read -sn 1 nul
-	fi
-}
-
-run_command() {
-	case "$1" in
-		q) 
-			exit 0 
-			;;
-		"chg tn")
-			if [[ $TAB == 1 ]]; then
-				local alb_path="${album_list[$cursor_item]}"
-				local alb=${alb_path##*/}
-				local art_path=${alb_path%/*}
-				local art=${art_path##*/}
-
-				reset_terminal
-				change_album_order "$art" "$alb"
-				setup_terminal
-			elif [[ $TAB == 2 ]]; then
-				get_tags "${song_list[$cursor_item]}"
-				open_cmd -n 'give number '
-				if [[ "$last_cmd_reply" =~ ^[0-9]+$ ]]; then
-					change_track_no "$ARTIST" "$ALBUM" "$TRACK" "$TITLE" "$last_cmd_reply"
-				else
-					printf "\e[${cmd_position}H%s " "not a number"
-					read -sn 1 nul
-				fi
-			else
-				printf "\e[${cmd_position}H%s " "no song or album is elected"
-				read -sn 1 nul
-			fi
-			;;
-		"chg ti") command_change_title ;;
-		*) : ;;
-	esac
-}
 
 key() {
-    # Handle special key presses.
-    [[ $1 == $'\e' ]] && {
-        read "${read_flags[@]}" -rsn 1
+	# Handle special key presses.
+	[[ $1 == $'\e' ]] && {
+		read "${read_flags[@]}" -rsn 1
 
-        # Handle a normal escape key press.
-        [[ ${1}${REPLY} == $'\e\e['* ]] &&
-            read "${read_flags[@]}" -rsn 1 _
+		# Handle a normal escape key press.
+		[[ ${1}${REPLY} == $'\e\e['* ]] &&
+			read "${read_flags[@]}" -rsn 1 _
 
-        local special_key=${1}${REPLY}
-    }
+		local special_key=${1}${REPLY}
+	}
 
-    case ${special_key:-$1} in
+	case ${special_key:-$1} in
 		q) exit 0 ;;
 		d) go_tab + ;;
 		a) go_tab - ;;
@@ -916,8 +892,8 @@ key() {
 
 tui() {
 	mkdir -p $SHM_DIR
-    ((BASH_VERSINFO[0] > 3)) &&
-        read_flags=(-t 1)
+	((BASH_VERSINFO[0] > 3)) &&
+		read_flags=(-t 1)
 
 
 	get_terminal_size
@@ -934,11 +910,12 @@ tui() {
 	update_time_bar
 	print_page
 
+	trap 'reset_terminal' EXIT
 	trap 'resized' WINCH
 
 	while :; do
 		read "${read_flags[@]}" -rsn1 && key "$REPLY"
-        [[ -t 1 ]] || exit 1
+		[[ -t 1 ]] || exit 1
 		song_status_check
 		update_vol_bar
 		update_time_bar
@@ -950,9 +927,134 @@ tui() {
 }
 # ==============================================================================
 
-[[ "$#" == 0 ]] &&
-	tui
 
+# tui cmd commands
+# ==============================================================================
+# the whole thing is just a  bunch of regex command parrsing
+command_change_title() {
+	if [[ $TAB == 2 ]]; then
+		get_tags "${song_list[$cursor_item]}"
+		open_cmd 'new title: '
+		change_track_title "$ARTIST" "$ALBUM" "$TRACK" "$TITLE" "$last_cmd_reply"
+	elif [[ $TAB == 1 ]]; then
+		open_cmd 'new title: '
+		for i in "${album_list[$cursor_item]}"/*.mp3; do
+			get_tags "$i" || 
+				return $?
+
+			set_song_meta "$i" "$ARTIST" "$last_cmd_reply" "$TRACK" "$TITLE" "$YEAR"
+		done
+
+		local artist_dir="${album_list[$cursor_item]%/*}"
+
+		if [[ -d "$artist_dir/$last_cmd_reply" ]]; then
+			mv "${album_list[$cursor_item]}"/* "$artist_dir/$last_cmd_reply"
+			rm -rf "${album_list[$cursor_item]}"
+		else 
+			mv "${album_list[$cursor_item]}" "$artist_dir/$last_cmd_reply/"
+		fi
+
+	else
+		printf "\e[${cmd_position}H%s " "no song is selected"
+		read -sn 1 nul
+	fi
+}
+
+command_chg() {
+	if [[ $1 =~ ^[[:space:]]*tn[[:space:]]*(.*)$ ]]; then
+		if [[ $TAB == 1 ]]; then
+			local alb_path="${album_list[$cursor_item]}"
+			local alb=${alb_path##*/}
+			local art_path=${alb_path%/*}
+			local art=${art_path##*/}
+
+			reset_terminal
+			change_album_order "$art" "$alb"
+			setup_terminal
+		elif [[ $TAB == 2 ]]; then
+			get_tags "${song_list[$cursor_item]}"
+			open_cmd -n 'give number '
+			if [[ "$last_cmd_reply" =~ ^[0-9]+$ ]]; then
+				change_track_no "$ARTIST" "$ALBUM" "$TRACK" "$TITLE" "$last_cmd_reply"
+			else
+				printf "\e[${cmd_position}H%s " "not a number"
+				read -sn 1 nul
+			fi
+		else
+			printf "\e[${cmd_position}H%s " "no song or album is elected"
+			read -sn 1 nul
+		fi
+	elif [[ $1 =~ ^[[:space:]]*ti[[:space:]]*(.*)$ ]]; then
+		command_change_title
+	fi
+}
+
+command_mv_artist() {
+	case "$TAB" in
+		0) local path="${artist_list[$cursor_item]}" ;;
+		1) local path="${album_list[$cursor_item]}" ;;
+		2) local path="${song_list[$cursor_item]}" ;;
+		*) :;;
+	esac
+	# gives the first mp3 in the path
+	local file_path=$(find "$path" -type f -iname "*.mp3" -print -quit)
+	get_tags "$file_path"
+	# could have used bash pattern matching here but i think this is simpler
+	local source_artist_dir="$(format_artist_dir "$ARTIST")"
+
+
+	if [[ -z $1 ]] then 
+		printf "\e[${cmd_position}H%s " "empty name"
+		return 0
+	else
+		local dest_artist_dir="$(format_artist_dir "$1")"
+	fi
+
+	# make the new 
+	[[ ! -d "$dest_artist_dir" ]] && mkdir "$dest_artist_dir"
+	for i in "$source_artist_dir"/* ; do
+		[[ ! -d $i ]] && continue
+		for j in "$i"/*.mp3 ; do
+			get_tags "$j"
+			change_track_artist "$ARTIST" "$ALBUM" "$TRACK" "$TITLE" "$1"
+		done
+		# sets the cover art if avalable
+		# should simplify it later (maybe)
+		[[ -f "$i"/cover.jpg ]] && 
+			mv -f "$i"/cover.jpg "$(format_album_dir "$1" "${i##*/}")"/cover.jpg
+		rmdir "$i" &>/dev/null
+	done
+	# we remove the directories if they are in fact empty
+	rmdir "$source_artist_dir" &>/dev/null
+}
+
+command_mv() {
+	if [[ $1 =~ ^[[:space:]]*art[[:space:]]*(.*)$ ]]; then
+		command_mv_artist "${BASH_REMATCH[1]}"
+	else 
+		printf "\e[${cmd_position}H%s " "inavild element to merge"
+	fi
+}
+
+run_command() {
+	if [[ $1 =~ ^[[:space:]]*q[[:space:]]*(.*)$ ]]; then
+		exit 0
+	elif [[ $1 =~ ^[[:space:]]*chg[[:space:]]*(.*)$ ]]; then
+		command_chg "${BASH_REMATCH[1]}"
+		
+	elif [[ $1 =~ ^[[:space:]]*mv[[:space:]]*(.*)$ ]]; then
+		command_mv "${BASH_REMATCH[1]}"
+	else
+		printf "\e[${cmd_position}H%s " "unknown command"
+	fi
+}
+# ==============================================================================
+
+
+
+
+
+[[ "$#" == 0 ]] && tui
 
 command="$1"
 shift
