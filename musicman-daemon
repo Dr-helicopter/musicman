@@ -81,10 +81,10 @@ play() {
 		# and thats how we know what the current volume is
 		# while youre there count the number of second passed from the track
 		# putput the whole thing in raw bytes
-		# (notice the LC_ALL env var that we passed that sets the locale
+		# (notice the LC_ALL env var that we passed, that, sets the locale
 		# which ensures that we get true bytes in the output or something
-		# or im gussing thats the case. i debuged that part with AI
-		# and it suggested this. it doesnt work  without it.)
+		# im gussing thats the case. i debuged that part with AI
+		# and it suggested this. it doesnt work without it.)
 		# feed the whole thing to aplay and voila !!
 		echo $time_index > "$TIMEFILE"
 		ffmpeg -i "$current_track" \
@@ -136,19 +136,19 @@ play() {
 		aplay -f S16_LE -c 2 -r 44100 &>/dev/null &
 
 		# this part is one of the ugliest workarounds ive done
-		# we want the pid of aplay in this pipeline 
-		# we also want to knwo when the pipe line terminates 
-		# so we can go to the next song 
+		# we want the pid of aplay in this pipeline
+		# we also want to know when the pipeline terminates
+		# so we can go to the next song
 		# we can send the program to the bg and get the pid no problem
-		# but if we then try to wait for the pid to terminate 
-		# we have to keep the prgram waiting 
+		# but if we then try to wait for the pid to terminate
+		# we have to keep the prgram waiting
 		# we cant send the wait to bg cause wait only works on the process's own children
 		# and if we send the wait to the bg with the aplay pipeline we cant get the aplay pid 
 		# cuse we are in a child process and cant send things to the outside world 
 		# and for some reason getting the subshell's pid and trying to kill that also wont work 
-		# so i setup a pipe to the outside world to send the pid throw it 
+		# so i setup a pipe to the outside world, to send the pid through it 
 		# this is ugly and im sure will cause truble in the feuture
-		# i wish you good luck reader
+		# this was my best attempt at explaning this. i wish you good luck reader.
 		tpid=$!
 		echo $tpid > $PID_PIPE
 		wait $tpid
@@ -275,11 +275,11 @@ export_data() {
 
 read_state
 
-# this is the main controll loop daemon
+# this is the main control loop daemon
 # its the brain of this whole thing
 (	
 	# this is the start of the daemon and we have all the arguments in $@ 
-	# so we dont need to get the data from $CONTROL_PIPE for the first run
+	# so we dont need to get the data from $CONTROL_PIPE for the first itteration
 	cmd=$1
 	shift
 	args=( "${@}" )
@@ -329,8 +329,10 @@ read_state
 				# and recreate the pipeline 
 				# (i did try to do some fancy shit with more fifo pipes 
 				# and awk, but they all had issues 
-				# even tho its ineffecient, this just worked the cleanest)
+				# even tho its ineffecient, redoing the pipeline worked the cleanest)
 				time_index=$(($(<$TIMEFILE)+10))
+				((time_index > ${maxtime%.*})) && next && continue
+				
 				[[ -n $player_pid ]] && kill -9 $player_pid &> /dev/null
 				play &> /dev/null
 				;;
