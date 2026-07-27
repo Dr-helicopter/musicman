@@ -933,6 +933,37 @@ tui() {
 # tui cmd commands
 # ==============================================================================
 # the whole thing is just a  bunch of regex command parrsing
+command_change_track_number() {
+	if [[ $TAB == 1 ]]; then
+		local alb_path="${album_list[$cursor_item]}"
+		local alb=${alb_path##*/}
+		local art_path=${alb_path%/*}
+		local art=${art_path##*/}
+
+		reset_terminal
+		change_album_order "$art" "$alb"
+		setup_terminal
+	elif [[ $TAB == 2 ]]; then
+		get_tags "${song_list[$cursor_item]}"
+
+		if [[ $1 =~ ^[[:space:]]*[1-9]*[[:space:]]*$ ]]; then 
+			change_track_no "$ARTIST" "$ALBUM" "$TRACK" "$TITLE" $1
+			return
+		fi
+
+		open_cmd -n 'give number '
+		if [[ "$last_cmd_reply" =~ ^[0-9]+$ ]]; then
+			change_track_no "$ARTIST" "$ALBUM" "$TRACK" "$TITLE" "$last_cmd_reply"
+		else
+			printf "\e[${cmd_position}H%s " "not a number"
+			read -sn 1 nul
+		fi
+	else
+		printf "\e[${cmd_position}H%s " "no song or album is elected"
+		read -sn 1 nul
+	fi
+}
+
 command_change_title() {
 	if [[ $TAB == 2 ]]; then
 		get_tags "${song_list[$cursor_item]}"
@@ -964,29 +995,8 @@ command_change_title() {
 
 command_chg() {
 	if [[ $1 =~ ^[[:space:]]*tn[[:space:]]*(.*)$ ]]; then
-		if [[ $TAB == 1 ]]; then
-			local alb_path="${album_list[$cursor_item]}"
-			local alb=${alb_path##*/}
-			local art_path=${alb_path%/*}
-			local art=${art_path##*/}
-
-			reset_terminal
-			change_album_order "$art" "$alb"
-			setup_terminal
-		elif [[ $TAB == 2 ]]; then
-			get_tags "${song_list[$cursor_item]}"
-			open_cmd -n 'give number '
-			if [[ "$last_cmd_reply" =~ ^[0-9]+$ ]]; then
-				change_track_no "$ARTIST" "$ALBUM" "$TRACK" "$TITLE" "$last_cmd_reply"
-			else
-				printf "\e[${cmd_position}H%s " "not a number"
-				read -sn 1 nul
-			fi
-		else
-			printf "\e[${cmd_position}H%s " "no song or album is elected"
-			read -sn 1 nul
-		fi
-	elif [[ $1 =~ ^[[:space:]]*ti[[:space:]]*(.*)$ ]]; then
+		command_change_track_number "${BASH_REMATCH[1]}"
+	elif [[ $1 =~ ^[[:space:]]*ti[[space:]]*(.*)$ ]]; then
 		command_change_title
 	fi
 }
