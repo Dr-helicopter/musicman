@@ -54,19 +54,21 @@ in_cmd=0
 # archiving logic
 # ==============================================================================
 editor_song_meta() {
+	mkdir -p "$SHM_DIR"
 	echo "
 # file ${1}
 # edit the vars as you please
 
-ARTIST='"${ARTIST:-$fallback_artist}"'
+ARTIST='"${override_artist:-$ARTIST}"'
 TITLE='${TITLE:-$(basename "$1")}'
-ALBUM='"${ALBUM:-$fallback_album}"'
+ALBUM='"${override_album:-$ALBUM}"'
 TRACK='${TRACK}'
 " > "$TMPFILE"
 	"${EDITOR:=vi}" "$TMPFILE"
 }
 
 change_album_order() {
+	mkdir -p "$SHM_DIR"
 	echo "$(
 		printf "# album %s - %s\n" "${2}" "${1}"
 		printf "#\n"
@@ -99,6 +101,7 @@ change_album_order() {
 
 
 open_song_editor() {
+	mkdir -p "$SHM_DIR"
 	editor_song_meta "$1"
 	source "$TMPFILE"
 	> "$TMPFILE"
@@ -391,11 +394,11 @@ add_song() {
 				eflag='-e' 
 			;;
 			-AR=*)
-				fallback_artist="${args[$i]#-AR=}"
+				override_artist="${args[$i]#-AR=}"
 				unset "args[$i]"
 			;;
 			-AL=*)
-				fallback_album="${args[$i]#-AL=}"
+				override_album="${args[$i]#-AL=}"
 				unset "args[$i]"
 			;;
 
