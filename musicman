@@ -338,6 +338,31 @@ change_track_artist() {
 	set_song_meta "$new_file_path" "$ARTIST" "$ALBUM" "$TRACK" "$TITLE" "$YEAR"
 }
 
+change_track_releas_year() {
+	# takes artist, album, track, title and new release year as $[1-5]
+	local album_dir=$(format_album_dir "$1" "$2")
+	local filename=$(format_file_name "$3" "$4")
+
+	local file_path="$album_dir/$filename"
+	[[ ! -f "$file_path" ]] && {
+		echo file $file_path doesnt exist
+		return 1
+	}
+
+
+	# get tags else return
+	get_tags "$file_path" ||
+		return $?
+
+	YEAR="$5"
+
+
+	local new_file_path="$album_dir/$(format_file_name "$TRACK" "$TITLE")"
+	mv "$file_path" "$new_file_path"
+
+	set_song_meta "$new_file_path" "$ARTIST" "$ALBUM" "$TRACK" "$TITLE" "$YEAR"
+}
+
 # not the best way to go about it
 # but im tired rn and this is all i cant think of
 sync_track_cover_art_to_album() {
@@ -963,7 +988,7 @@ command_change_track_number() {
 	elif [[ $TAB == 2 ]]; then
 		get_tags "${song_list[$cursor_item]}"
 
-		if [[ $1 =~ ^[[:space:]]*[1-9]*[[:space:]]*$ ]]; then
+		if [[ $1 =~ ^[[:space:]]*[1-9]+[[:space:]]*$ ]]; then
 			change_track_no "$ARTIST" "$ALBUM" "$TRACK" "$TITLE" $1
 			return
 		fi
@@ -1010,6 +1035,45 @@ command_change_title() {
 	fi
 }
 
+command_change_year() {
+	if [[ $TAB == 0 ]]; then
+		printf "\e[${cmd_position}H%s " "only works on albums and songs"
+		return
+	fi
+
+	if [[ $1 =~ ^[[:space:]]*[1-9]+[[:space:]]*$ ]]; then
+		local new_release_year=$1
+	else
+		open_cmd -n 'give number '
+		if [[ "$last_cmd_reply" =~ ^[0-9]+$ ]]; then
+			local new_release_year="$last_cmd_reply"
+		else
+			printf "\e[${cmd_position}H%s " "not a number"
+			return
+		fi
+	fi
+
+	change_track_no  "$last_cmd_reply"
+
+	if [[ $TAB == 1 ]]; then
+		local alb_path="${album_list[$cursor_item]}"
+		local alb=${alb_path##*/}
+		local art_path=${alb_path%/*}
+		local art=${art_path##*/}
+
+		for i in "$alb_path"/*.mp3; do
+			get_tags "$i"
+			change_track_releas_year "$ARTIST" "$ALBUM" "$TRACK" "$TITLE" \
+				"$new_release_year"
+		done
+	elif [[ $TAB == 2 ]]; then
+		get_tags "${song_list[$cursor_item]}"
+
+		change_track_releas_year "$ARTIST" "$ALBUM" "$TRACK" "$TITLE" \
+			"$new_release_year"
+	fi
+}
+
 command_change_cover_art() {
 	[[ $TAB != 1 ]] && {
 		printf "\e[${cmd_position}H%s " "only works on albums"
@@ -1045,10 +1109,12 @@ command_change_cover_art() {
 command_chg() {
 	if [[ $1 =~ ^[[:space:]]*tn[[:space:]]*(.*)$ ]]; then
 		command_change_track_number "${BASH_REMATCH[1]}"
-	elif [[ $1 =~ ^[[:space:]]*ti[[space:]]*(.*)$ ]]; then
+	elif [[ $1 =~ ^[[:space:]]*ti[[:space:]]*(.*)$ ]]; then
 		command_change_title "${BASH_REMATCH[1]}"
 	elif [[ $1 =~ ^[[:space:]]*cvr[[:space:]]*(.*)$ ]]; then
 		command_change_cover_art "${BASH_REMATCH[1]}"
+	elif [[ $1 =~ ^[[:space:]]*yr[[:space:]]*(.*)$ ]]; then
+		command_change_year "${BASH_REMATCH[1]}"
 	else
 		printf "\e[${cmd_position}H%s " "unknown element to cahnge"
 	fi
