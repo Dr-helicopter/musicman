@@ -181,6 +181,7 @@ set_song_meta() {
 		-map_metadata:s:a -1 \
 		-c:a copy -map 0:a \
 		${2:+-metadata artist="$2"} \
+		${2:+-metadata album_artist="$2"} \
 		${3:+-metadata album="$3"} \
 		${4:+-metadata track="$(format_prefix_number "$4")"} \
 		${5:+-metadata title="$5"} \
@@ -393,6 +394,7 @@ _add_song() {
 	local file_track=$(format_prefix_number "$TRACK")
 	local file_name="$file_track:${TITLE////∕}.mp3"
 	local file_path="$album_dir/$file_name"
+	local tmp_out="/tmp/musicman_tmp_out.mp3"
 
 	local img_input=()
 
@@ -407,24 +409,29 @@ _add_song() {
 		-map_metadata:s:a -1 \
 		-c:a copy -map 0:a \
 		-metadata artist="$ARTIST" \
+		-metadata album_artist="$ARTIST" \
 		-metadata album="$ALBUM" \
 		-metadata track="$file_track" \
 		-metadata title="$TITLE" \
 		-metadata date="$YEAR" \
 		-id3v2_version 3 \
-		"$file_path" \
+		"$tmp_out" \
 		-v quiet ||
 	ffmpeg -y -i "$1" "${img_input[@]}" \
 		-map_metadata -1 \
 		-map_metadata:s:a -1 \
 		-c:a libmp3lame -q:a 2 -map 0:a \
 		-metadata artist="$ARTIST" \
+		-metadata album_artist="$ARTIST" \
 		-metadata album="$ALBUM" \
 		-metadata track="$file_track" \
 		-metadata title="$TITLE" \
 		-metadata date="$YEAR" \
 		-id3v2_version 3 \
-		"$file_path" #-v quiet
+		"$tmp_out" #-v quiet
+
+	[[ -f "$tmp_out" ]] &&
+		 mv "$tmp_out" "$file_path"
 }
 
 add_song() {
@@ -1082,7 +1089,7 @@ command_change_cover_art() {
 
 	[[ -n "$1" ]] &&
 		local file="$1" || {
-		open_cmd 'path to jpg file'
+		open_cmd 'path to jpg file '
 		local file="$last_cmd_reply"
 	}
 
@@ -1091,9 +1098,9 @@ command_change_cover_art() {
 		return
 	}
 	# check magic bytes
-	local b=$(dd if="$1" bs=1 count=2 2>/dev/null | od -An -tx1 | tr -d ' \n')
+	local b=$(od "$1" -x -w2 | head -1 | cut -f 2 -d' ')
 
-	[[ "$b" != "ffd8" ]] && {
+	[[ "$b" != "d8ff" ]] && {
 		printf "\e[${cmd_position}H%s " "not jpg"
 		return
 	}
