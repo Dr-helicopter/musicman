@@ -13,14 +13,16 @@ mkdir -p $MM_HOME
 
 SHM_DIR=/dev/shm/musicman
 VOLFILE=$SHM_DIR/vol
+SELECTED_ALBUMS_FILE="$SHM_DIR"/selected_albums
+SELECTED_SONGS_FILE="$SHM_DIR"/selected_songs
 FILEPATHFILE="$SHM_DIR"/file_path
-MAXTIMEFILE=$SHM_DIR/maxtime
-TIMEFILE=$SHM_DIR/time
-NAMEFILE=$SHM_DIR/name
-ARTISTFILE=$SHM_DIR/artist
-ARLBUMFILE=$SHM_DIR/album
+MAXTIMEFILE="$SHM_DIR"/maxtime
+TIMEFILE="$SHM_DIR"/time
+NAMEFILE="$SHM_DIR"/name
+ARTISTFILE="$SHM_DIR"/artist
+ARLBUMFILE="$SHM_DIR"/album
 
-TMPFILE="$SHM_DIR/TMPFILE"
+TMPFILE="$SHM_DIR"/TMPFILE
 
 
 : ${volume_step:=2}
@@ -516,26 +518,37 @@ resized() {
 	update_vol_bar
 	print_page
 }
-read_stats() {
-	TAB=$(cat "$MM_HOME/tab" 2>/dev/null)
-	TAB=${TAB%%[!0-9]*}	# Remove everything after first non-digit
-	TAB=${TAB:-0}		# Default to 0 if empty
-}
-
 read_artists() {
 	artist_list=("$MUSICDIR"/*)
 }
 
 read_albums() {
-	album_list=("$MUSICDIR"/*/*)
+	if [[ -f "$SELECTED_ALBUMS_FILE" ]]; then
+		mapfile -t album_list < "$SELECTED_ALBUMS_FILE"
+	else
+		album_list=("$MUSICDIR"/*/*)
+	fi
 	album_display_list=("${album_list[@]#$MUSICDIR/}")
 	album_display_list=("${album_display_list[@]/\// - }")
 }
 
 read_songs() {
-	song_list=("$MUSICDIR"/*/*/*.mp3)
+	if [[ -f "$SELECTED_SONGS_FILE" ]]; then
+		mapfile -t song_list < "$SELECTED_SONGS_FILE"
+	else
+		song_list=("$MUSICDIR"/*/*/*.mp3)
+	fi
 	song_display_list=("${song_list[@]#$MUSICDIR/}")
 	song_display_list=("${song_display_list[@]/\/*\// - }")
+}
+
+
+read_stats() {
+	TAB=$(cat "$MM_HOME/tab" 2>/dev/null)
+	TAB=${TAB%%[!0-9]*}	# Remove everything after first non-digit
+	TAB=${TAB:-0}		# Default to 0 if empty
+	read_albums
+	read_songs
 }
 
 
@@ -775,10 +788,26 @@ go_tab() {
 	print_page
 }
 
+
+set_albums_list() {
+	> "$SELECTED_ALBUMS_FILE"
+	for i in "$@"; do
+		echo "$i" >> "$SELECTED_ALBUMS_FILE"
+	done
+}
+
+set_songs_list() {
+	> "$SELECTED_SONGS_FILE"
+	for i in "$@"; do
+		echo "$i" >> "$SELECTED_SONGS_FILE"
+	done
+}
+
 select_item() {
 	case "$TAB" in
 		0)
 			album_list=( "${artist_list[$1]}"/* )
+			set_albums_list "${album_list[@]}"
 			album_display_list=("${album_list[@]##*/}")
 			t1cursor_item=0
 			t1scroll=0
@@ -786,6 +815,7 @@ select_item() {
 			;;
 		1)
 			song_list=( "${album_list[$1]}"/*.mp3 )
+			set_songs_list "${song_list[@]}"
 			song_display_list=( "${song_list[@]#*/*:}" )
 			t2cursor_item=0
 			t2scroll=0
@@ -804,6 +834,7 @@ select_all() {
 	case "$TAB" in
 		0)
 			read_albums
+			set_albums_list "${album_list[@]}"
 			t1cursor_item=0
 			t1scroll=0
 			go_tab 1
@@ -814,6 +845,7 @@ select_all() {
 			for a in "${album_list[@]}"; do
 				song_list+=( "$a"/*.mp3 )
 			done
+			set_songs_list "${song_list[@]}"
 			song_display_list=( "${song_list[@]#$MUSICDIR/}" )
 			song_display_list=("${song_display_list[@]/\/*:/ - }")
 			t2cursor_item=0
@@ -950,8 +982,6 @@ tui() {
 	get_terminal_size
 	setup_terminal
 	read_artists
-	read_albums
-	read_songs
 	read_stats
 	[[ -f "$VOLFILE" ]] && volume=$(<$VOLFILE)
 	update_title_bar
