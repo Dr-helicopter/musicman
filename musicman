@@ -1011,7 +1011,7 @@ tui() {
 
 # tui cmd commands
 # ==============================================================================
-# the whole thing is just a  bunch of regex command parrsing
+# the whole thing is just a  bunch of regex command parsing
 command_change_track_number() {
 	if [[ $TAB == 1 ]]; then
 		local alb_path="${album_list[$cursor_item]}"
@@ -1078,7 +1078,7 @@ command_change_year() {
 		return
 	fi
 
-	if [[ $1 =~ ^[[:space:]]*[1-9]+[[:space:]]*$ ]]; then
+	if [[ $1 =~ ^[[:space:]]*[0-9]+[[:space:]]*$ ]]; then
 		local new_release_year=$1
 	else
 		open_cmd -n 'give number '
